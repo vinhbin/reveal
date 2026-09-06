@@ -22,6 +22,9 @@ coverage/
 *.log
 
 # Untracked media, uploads, and review data
+*.db
+*.sqlite
+*.sqlite3
 uploads/
 local-data/
 exports/
@@ -32,6 +35,17 @@ exports/
 
 # Earlier project research, retained locally
 /accesswatch-*.md
+
+# Local planning and agent working notes
+/.reveal-handoff/
+/.superpowers/
+/docs/PLAN.md
+/docs/ARCHITECTURE.md
+/docs/EVIDENCE.md
+/docs/REPLIT_HANDOFF.md
+/docs/GEMINI_PLAN.md
+/docs/plans/
+/docs/superpowers/
 
 # OS files
 .DS_Store

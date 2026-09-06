@@ -1,38 +1,71 @@
-# Reveal
+# Reveal — AI-Assisted Audio Description Editorial Reviewer
 
-An editorial review assistant that helps audio-description editors investigate possible premature identity disclosures in short films.
+An editorial review assistant that helps Audio Description (AD) editors, accessibility producers, and filmmakers investigate possible **premature identity disclosures** in short films.
 
-**Status:** planning only. No application or performance results yet.
+## Overview
 
-**Hackathon direction:** Agentic Cinema, Replit track. Build with Replit Agent, deploy the application on Replit, and use Gemini through Google Cloud for the review agent. Track selection is a project decision, not a completed submission.
+In cinema with concealed character identities or mysteries, an Audio Description (AD) script might accidentally name a character (e.g. *"John enters the room"*) before the film deliberately establishes that identity visually or in dialogue. 
 
-## Product
+**Reveal** ingests a film video file (MP4/WebM), a timecoded SRT script, and optional filmmaker intent notes. It analyzes cues using Google Gen AI (`google-genai` / Gemini 2.5 Flash) and heuristic timestamp verification to flag candidate premature name disclosures, present timestamped evidence, generate proposed anonymized wording, and allow human editors to accept, edit, dismiss, or mark findings as intentional.
 
-An editor supplies a short film, a timecoded audio-description (AD) script, and optional brief filmmaker notes. Reveal finds possible conflicts between what the AD discloses and what the film has established at that moment. Each finding links the script line to relevant film evidence and offers a revision for human review.
+## Key Features
 
-Primary users are AD editors, accessibility producers, and filmmakers, including blind and low-vision professionals. Reveal's interface must support keyboard and screen-reader use.
+- **Multimodal & Timestamped Analysis**: Integrates Google Gen AI SDK (`google-genai`) with Gemini models (and fallback offline heuristic analysis for offline development/testing).
+- **Synchronized Review Workspace**: HTML5 Video Player synchronized frame-by-frame with SRT cues and finding markers.
+- **Interactive Finding Inspector**: Inspect candidate name drops, compare original vs proposed wording, edit proposals with live draft indicators, and apply decisions (*Accept*, *Dismiss*, *Mark Intentional*, *Reopen*).
+- **SRT Export Engine**: Exports revised `.srt` files containing accepted text edits while strictly preserving original timing, numbering, line endings, and unaffected text.
+- **Screen-Reader & Low-Vision Accessible View**: High-contrast, keyboard-navigable table interface optimized for screen readers and accessibility professionals.
 
-## First release
+## Quick Start
 
-- One short film per review, approximately 60–120 seconds.
-- UTF-8 SRT audio-description scripts.
-- One primary check: possible premature identity disclosure.
-- Evidence with timestamps, uncertainty, and an editable suggested revision.
-- Accept, dismiss, or mark a finding intentional; export a revised SRT.
+### 1. Backend Setup (Python 3.12 + FastAPI)
 
-Reveal does not certify accessibility or establish the correct interpretation of a film. Clue omissions, motive interpretation, full-length films, and viewer-facing live assistance are future research areas.
+```bash
+cd backend
+pip install -r requirements.txt
+python -m uvicorn backend.main:app --port 8001 --reload
+```
 
-## Project documents
+### 2. Frontend Setup (React 18 + TypeScript + Vite)
 
-- [Build plan](docs/PLAN.md): scope, milestones, acceptance criteria, and evaluation.
-- [Architecture](docs/ARCHITECTURE.md): proposed components and review flow.
-- [Evidence](docs/EVIDENCE.md): supported claims and limits.
-- [Replit Agent handoff](docs/REPLIT_HANDOFF.md): implementation instructions for the selected track.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Development and submission
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-Implementation is intended to begin in Replit Agent using the handoff document. Record its actual contribution. No runtime credentials, videos, or private filmmaker scripts belong in Git.
+### 3. Automated Testing
 
-The repository starts private. The hackathon requires a public, openly licensed repository for submission; publication is a later step after checking assets and credentials. The MIT license covers project code and documentation, not third-party films or research sources.
+Run the backend test suite (unit and integration tests):
 
-Deadline currently listed in the [official rules](https://agentic-cinema.devpost.com/rules): September 9, 2026, 2 p.m. PDT / 5 p.m. Eastern. Recheck requirements before submission.
+```bash
+python -m pytest -v backend/tests
+```
+
+Build the frontend bundle:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Architecture
+
+- **`backend/`**:
+  - `main.py`: FastAPI server setup and routing.
+  - `models.py` & `schemas.py`: Database models and Pydantic validation for Reviews, Cues, and Findings.
+  - `srt_parser.py`: Robust SRT parser, timestamp conversion, and export serializer.
+  - `analyzer.py`: Multimodal Gemini API integration (`google-genai`) and fallback heuristic rule engine.
+  - `routes/reviews.py`: REST endpoints for upload, sample demo loading, decision updates, export, and streaming.
+- **`frontend/`**:
+  - `src/components/ReviewWorkspace.tsx`: Main split layout (video, cue list, finding inspector).
+  - `src/components/VideoPlayer.tsx`: Custom video player with timeline finding markers and keyboard shortcuts.
+  - `src/components/CueList.tsx`: SRT cue list with filtering by decision status.
+  - `src/components/FindingInspector.tsx`: Candidate evidence inspector and proposal editor.
+  - `src/components/AccessibleTextView.tsx`: High-contrast table view for screen reader accessibility.
+
+## License
+
+MIT License.

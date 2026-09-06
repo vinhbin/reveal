@@ -1,0 +1,38 @@
+# Credentials and local settings
+.env
+.env.*
+!.env.example
+credentials*.json
+service-account*.json
+*.pem
+*.key
+
+# Dependencies, builds, and caches
+node_modules/
+dist/
+build/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+coverage/
+.coverage
+*.log
+
+# Untracked media, uploads, and review data
+uploads/
+local-data/
+exports/
+*.mp4
+*.mov
+*.mkv
+*.wav
+
+# Earlier project research, retained locally
+/accesswatch-*.md
+
+# OS files
+.DS_Store
+Thumbs.db

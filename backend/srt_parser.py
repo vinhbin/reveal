@@ -221,8 +221,12 @@ def export_srt_bytes(
         # In-place byte replacement in reverse order so byte offsets do not shift
         targets.sort(key=lambda t: t[0][0], reverse=True)
         out = bytearray(raw_bytes)
+        is_crlf = b"\r\n" in raw_bytes
         for (s, e), new_text in targets:
-            encoded = new_text.strip().encode("utf-8")
+            text_str = new_text.strip()
+            if is_crlf:
+                text_str = re.sub(r"(?<!\r)\n", "\r\n", text_str)
+            encoded = text_str.encode("utf-8")
             out[s:e] = encoded
         return bytes(out)
 

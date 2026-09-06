@@ -527,3 +527,83 @@ async def test_regression_byte_exact_edited_export_bom_and_padded_ids():
     assert out.endswith(b"Untouched.\r\n\r\n"), "Trailing bytes not preserved"
 
 
+@pytest.mark.asyncio
+async def test_regression_migrated_populated_review_serializes():
+    """
+    Regression Test 12:
+    Migrating a database that contains existing findings with missing needs_re_review
+    column must backfill valid boolean defaults so review serialization succeeds without HTTP 500.
+    """
+    from sqlalchemy import text
+    from backend.database import init_db
+    from backend.schemas import FindingSchema
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        review_res = await ac.post("/api/reviews/sample")
+        assert review_res.status_code == 201
+        review_id = review_res.json()["id"]
+
+        # Drop needs_re_review column to simulate pre-existing database
+        from backend.tests.conftest import test_engine
+        async with TestingSessionLocal() as session:
+            await session.execute(text("ALTER TABLE findings DROP COLUMN needs_re_review"))
+            await session.commit()
+
+        # Run init_db on test_engine (triggers auto-migration and backfill)
+        await init_db(test_engine)
+
+        # Fetch review - must serialize cleanly with 200 OK (not 500)
+        get_res = await ac.get(f"/api/reviews/{review_id}")
+        assert get_res.status_code == 200
+        findings = get_res.json()["findings"]
+        assert len(findings) > 0
+        assert findings[0]["needs_re_review"] is False
+
+
+@pytest.mark.asyncio
+async def test_regression_accepted_custom_wording_survives_merge():
+    """
+    Regression Test 13:
+    When combining accepted findings on the same cue where an editor provided custom wording,
+    the approved action, description, and location must survive without invented filler text.
+    """
+    from types import SimpleNamespace as NS
+    from backend.routes.reviews import resolve_cue_text
+
+    original = "John greets Sarah near the door."
+    f1 = NS(
+        candidate_name="John",
+        proposed_text="A man greets Sarah near the door.",
+        edited_proposal="A tall man quietly greets Sarah beside the exit."
+    )
+    f2 = NS(
+        candidate_name="Sarah",
+        proposed_text="John greets a woman near the door.",
+        edited_proposal="John greets a woman near the door."
+    )
+
+    merged = resolve_cue_text(original, [f1, f2])
+    assert "tall man" in merged, "Custom subject was lost"
+    assert "quietly" in merged, "Custom action manner was lost"
+    assert "beside the exit" in merged, "Custom location was lost"
+    assert "woman" in merged, "Second entity replacement was lost"
+    assert "John" not in merged, "Concealed name John was restored"
+    assert "Sarah" not in merged, "Concealed name Sarah was restored"
+    assert "unidentified figure" not in merged, "Invented placeholder text was used"
+
+
+@pytest.mark.asyncio
+async def test_regression_multiline_revision_retains_crlf_style():
+    """
+    Regression Test 14:
+    A multiline revision with LF breaks must be formatted with CRLF in a CRLF SRT file,
+    preserving exact byte consistency.
+    """
+    raw = b"001\r\n00:00:01,000 --> 00:00:04,000\r\nOld first line.\r\nOld second line.\r\n\r\n"
+    out = export_srt_bytes(raw, parse_srt(raw.decode()), {1: "New first line.\nNew second line."})
+    expected = raw.replace(b"Old first line.\r\nOld second line.", b"New first line.\r\nNew second line.")
+    assert out == expected
+
+
+

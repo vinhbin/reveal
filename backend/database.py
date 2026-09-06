@@ -11,7 +11,7 @@ class Base(DeclarativeBase):
     pass
 
 def _auto_migrate_columns(target, connection, **kw):
-    """Automatically adds any new columns from models to existing SQLite tables."""
+    """Automatically adds any new columns from models to existing SQLite tables and backfills defaults."""
     try:
         insp = inspect(connection)
         for table_name, table in target.tables.items():
@@ -20,15 +20,24 @@ def _auto_migrate_columns(target, connection, **kw):
                 for col in table.columns:
                     if col.name not in existing_cols:
                         col_type = col.type.compile(connection.dialect)
-                        sql = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}"
+                        default_clause = ""
+                        if col.name == "needs_re_review":
+                            default_clause = " DEFAULT 0"
+                        elif col.name in ("start_byte", "end_byte"):
+                            default_clause = " DEFAULT 0"
+                        sql = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default_clause}"
                         connection.execute(text(sql))
-    except Exception:
-        pass
+        if insp.has_table("findings"):
+            connection.execute(text("UPDATE findings SET needs_re_review = 0 WHERE needs_re_review IS NULL"))
+    except Exception as e:
+        import logging
+        logging.getLogger("reveal.database").warning(f"Auto-migration notice: {e}")
 
 event.listen(Base.metadata, "after_create", _auto_migrate_columns)
 
-async def init_db():
-    async with engine.begin() as conn:
+async def init_db(target_engine=None):
+    use_engine = target_engine or engine
+    async with use_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 async def get_db():

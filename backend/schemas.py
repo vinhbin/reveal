@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from typing import Optional, List, Any
+from pydantic import BaseModel, ConfigDict, field_validator
 from backend.models import ReviewStatus, DecisionStatus, EvidenceOrigin, UncertaintyLevel
 
 class CueSchema(BaseModel):
@@ -35,6 +35,11 @@ class FindingSchema(BaseModel):
     status: DecisionStatus
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("needs_re_review", mode="before")
+    @classmethod
+    def coerce_needs_re_review(cls, v: Any) -> bool:
+        return bool(v) if v is not None else False
 
 class FindingUpdateSchema(BaseModel):
     status: Optional[DecisionStatus] = None

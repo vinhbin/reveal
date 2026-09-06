@@ -123,10 +123,37 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                             }}
                           >
                             <strong>Re-review required:</strong> Latest analysis updated this proposal.
+                            <div style={{ marginTop: '4px', fontSize: '0.85rem', color: '#fef3c7' }}>
+                              <strong>Updated Proposal:</strong> "{finding.edited_proposal || finding.proposed_text}"
+                            </div>
                             {finding.previous_accepted_text && (
                               <div style={{ marginTop: '4px', fontSize: '0.85rem', color: '#fed7aa' }}>
                                 Previously accepted wording: <em>"{finding.previous_accepted_text}"</em>
                               </div>
+                            )}
+                            {hasUnsavedDraft && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditedProposals({
+                                    ...editedProposals,
+                                    [finding.id]: finding.edited_proposal || finding.proposed_text,
+                                  })
+                                }
+                                style={{
+                                  marginTop: '6px',
+                                  padding: '4px 10px',
+                                  fontSize: '0.8rem',
+                                  background: '#f59e0b',
+                                  color: '#000',
+                                  fontWeight: 600,
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Use Updated Proposal
+                              </button>
                             )}
                           </div>
                         )}

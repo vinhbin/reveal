@@ -1,4 +1,6 @@
 import os
+import re
+import difflib
 import shutil
 import uuid
 from typing import List, Optional, Dict
@@ -443,64 +445,88 @@ async def update_finding(
     return finding
 
 
+def _extract_entity_replacement(cue_text: str, name: str, proposal: str) -> str:
+    """Extracts what `name` was replaced with in `proposal` relative to `cue_text`."""
+    if not name or name not in cue_text:
+        return ""
+    idx = cue_text.find(name)
+    prefix = cue_text[:idx]
+    suffix = cue_text[idx + len(name):]
+
+    if proposal.startswith(prefix) and (not suffix or proposal.endswith(suffix)) and len(proposal) >= len(prefix) + len(suffix):
+        return proposal[len(prefix):len(proposal) - len(suffix)] if len(suffix) > 0 else proposal[len(prefix):]
+
+    import difflib
+    s = difflib.SequenceMatcher(None, cue_text, proposal)
+    blocks = s.get_matching_blocks()
+    for i in range(len(blocks) - 1):
+        a_end = blocks[i].a + blocks[i].size
+        next_a = blocks[i + 1].a
+        if a_end <= idx and next_a >= idx + len(name):
+            b_start = blocks[i].b + blocks[i].size
+            next_b = blocks[i + 1].b
+            return proposal[b_start:next_b]
+    return ""
+
+
 def resolve_cue_text(cue_text: str, accepted_findings: list) -> str:
     """
     Resolves accepted cue revisions at the cue level.
     If multiple findings exist on the same cue:
     1. If any finding has an authoritative custom edit where none of the accepted candidate names remain, use it.
-    2. Otherwise, combines the accepted replacements from all findings onto the cue text without re-introducing concealed names.
+    2. If any finding has a customized edit differing from default proposal, uses it as the base sentence and
+       applies the other accepted findings' entity replacements to it (preserving all descriptions, actions, locations).
+    3. Otherwise, combines the accepted replacements onto cue_text without restoring concealed names or inventing text.
     """
     if not accepted_findings:
         return cue_text
     if len(accepted_findings) == 1:
         f = accepted_findings[0]
-        return (f.edited_proposal or f.proposed_text or cue_text).strip()
+        return (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or cue_text).strip()
 
-    names = [f.candidate_name for f in accepted_findings if f.candidate_name]
+    names = [getattr(f, "candidate_name", "") for f in accepted_findings if getattr(f, "candidate_name", "")]
 
     # 1. Authoritative custom edit that eliminates all names
     for f in reversed(accepted_findings):
-        proposal = (f.edited_proposal or f.proposed_text or "").strip()
+        proposal = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
         if proposal and all(name not in proposal for name in names):
             return proposal
 
-    # 2. Combine the accepted replacements
-    import difflib
+    # 2. Check for custom edits differing from default proposed_text
+    custom_findings = [
+        f for f in accepted_findings
+        if (getattr(f, "edited_proposal", "") or "").strip() and
+           (getattr(f, "edited_proposal", "") or "").strip() != (getattr(f, "proposed_text", "") or "").strip()
+    ]
+
+    if custom_findings:
+        base_f = custom_findings[-1]
+        result = (getattr(base_f, "edited_proposal", "") or "").strip()
+        other_findings = [f for f in accepted_findings if f != base_f]
+        for f in other_findings:
+            name = getattr(f, "candidate_name", "")
+            if name and name in result:
+                prop = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
+                repl = _extract_entity_replacement(cue_text, name, prop)
+                if repl:
+                    result = re.sub(rf"\b{re.escape(name)}\b", repl, result)
+        return result
+
+    # 3. Default proposals merge
     result = cue_text
-    sorted_findings = sorted(accepted_findings, key=lambda f: len(f.candidate_name or ""), reverse=True)
+    sorted_findings = sorted(accepted_findings, key=lambda f: len(getattr(f, "candidate_name", "") or ""), reverse=True)
 
     for f in sorted_findings:
-        name = f.candidate_name
+        name = getattr(f, "candidate_name", "")
         if not name or name not in result:
             continue
-        proposal = (f.edited_proposal or f.proposed_text or "").strip()
+        proposal = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
         if not proposal:
             continue
 
-        replacement = None
-        if name in cue_text:
-            idx = cue_text.find(name)
-            prefix = cue_text[:idx]
-            suffix = cue_text[idx + len(name):]
-
-            if proposal.startswith(prefix) and (not suffix or proposal.endswith(suffix)) and len(proposal) >= len(prefix) + len(suffix):
-                replacement = proposal[len(prefix):len(proposal) - len(suffix)] if len(suffix) > 0 else proposal[len(prefix):]
-            else:
-                s = difflib.SequenceMatcher(None, cue_text, proposal)
-                blocks = s.get_matching_blocks()
-                for i in range(len(blocks) - 1):
-                    a_end = blocks[i].a + blocks[i].size
-                    next_a = blocks[i+1].a
-                    if a_end <= idx and next_a >= idx + len(name):
-                        b_start = blocks[i].b + blocks[i].size
-                        next_b = blocks[i+1].b
-                        replacement = proposal[b_start:next_b]
-                        break
-
-        if replacement is not None:
-            result = result.replace(name, replacement)
-        elif name not in proposal:
-            result = result.replace(name, "an unidentified figure")
+        repl = _extract_entity_replacement(cue_text, name, proposal)
+        if repl:
+            result = re.sub(rf"\b{re.escape(name)}\b", repl, result)
 
     return result
 

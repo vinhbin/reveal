@@ -327,3 +327,203 @@ async def test_regression_multiple_findings_cue_level_resolution():
         assert "Dr. Thorne" not in exported_text
         assert "Agent Miller" not in exported_text
 
+
+@pytest.mark.asyncio
+async def test_regression_combine_two_independent_accepted_proposals():
+    """
+    Regression Test 8:
+    When two independent proposals on the same cue are accepted without manual custom editing,
+    the export must combine both replacements so neither concealed name is restored.
+    """
+    raw_srt = (
+        "1\n"
+        "00:00:02,000 --> 00:00:06,000\n"
+        "John greets Sarah.\n\n"
+        "2\n"
+        "00:00:12,000 --> 00:00:16,000\n"
+        "Liam walks away.\n"
+    ).encode("utf-8")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        valid_mp4_bytes = (
+            b"\x00\x00\x00\x1cftypisom\x00\x00\x02\x00isomiso2avc1mp41"
+            b"\x00\x00\x00\x08free"
+            b"\x00\x00\x04\x00mdat" + b"\x00" * 1024
+        )
+        files = {
+            "video_file": ("test.mp4", io.BytesIO(valid_mp4_bytes), "video/mp4"),
+            "srt_file": ("test.srt", io.BytesIO(raw_srt), "application/x-subrip")
+        }
+        res = await ac.post("/api/reviews", data={"title": "Combine Two Proposals", "intent_notes": ""}, files=files)
+        assert res.status_code == 201
+        review_id = res.json()["id"]
+
+        async with TestingSessionLocal() as session:
+            cues_res = await session.execute(
+                select(Cue).filter(Cue.review_id == review_id, Cue.index == 1)
+            )
+            cue1 = cues_res.scalars().first()
+
+            f1 = Finding(
+                id="f_john",
+                review_id=review_id,
+                cue_id=cue1.id,
+                cue_index=1,
+                candidate_name="John",
+                issue_description="Disclosure John",
+                proposed_text="A stranger greets Sarah.",
+                edited_proposal="A stranger greets Sarah.",
+                evidence_origin=EvidenceOrigin.MODEL_INFERENCE,
+                interval_start=2.0,
+                interval_end=6.0,
+                status=DecisionStatus.ACCEPTED
+            )
+            f2 = Finding(
+                id="f_sarah",
+                review_id=review_id,
+                cue_id=cue1.id,
+                cue_index=1,
+                candidate_name="Sarah",
+                issue_description="Disclosure Sarah",
+                proposed_text="John greets an unknown woman.",
+                edited_proposal="John greets an unknown woman.",
+                evidence_origin=EvidenceOrigin.MODEL_INFERENCE,
+                interval_start=2.0,
+                interval_end=6.0,
+                status=DecisionStatus.ACCEPTED
+            )
+            session.add_all([f1, f2])
+            await session.commit()
+
+        export_res = await ac.get(f"/api/reviews/{review_id}/export")
+        assert export_res.status_code == 200
+        text = export_res.content.decode("utf-8")
+        assert "John" not in text
+        assert "Sarah" not in text
+        assert "A stranger greets an unknown woman." in text
+
+
+@pytest.mark.asyncio
+async def test_regression_archived_wording_preserved_on_candidate_dropped():
+    """
+    Regression Test 9:
+    Accept a finding -> model reanalysis changes proposal (status UNREVIEWED, needs_re_review=True, previous_accepted_text archived)
+    -> subsequent reanalysis omits candidate -> finding must NOT be deleted; archived wording must be retained.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post("/api/reviews/sample")
+        assert res.status_code == 201
+        review_id = res.json()["id"]
+        finding_id = res.json()["findings"][0]["id"]
+
+        # 1. Accept with custom wording
+        original_custom = "A masked figure enters with a briefcase."
+        await ac.patch(
+            f"/api/reviews/{review_id}/findings/{finding_id}",
+            json={"status": "accepted", "edited_proposal": original_custom}
+        )
+
+        # 2. Simulate model returning a changed proposal
+        async def changed_proposal(*args, **kwargs):
+            return [
+                CandidateFinding(
+                    cue_index=3,
+                    candidate_name="Dr. Aris Thorne",
+                    issue_description="Changed proposal",
+                    proposed_text="An operative arrives with a case.",
+                    evidence_origin=EvidenceOrigin.MODEL_INFERENCE,
+                    interval_start=15.0,
+                    interval_end=60.0,
+                    uncertainty=UncertaintyLevel.MEDIUM
+                )
+            ], "mock-changed"
+
+        from backend.routes import reviews as reviews_route
+        original_analyzer = reviews_route.analyze_review
+        try:
+            reviews_route.analyze_review = changed_proposal
+            reanalyze_res = await ac.post(f"/api/reviews/{review_id}/analyze")
+            assert reanalyze_res.status_code == 200
+            f = reanalyze_res.json()["findings"][0]
+            assert f["status"] == "unreviewed"
+            assert f["needs_re_review"] is True
+            assert f["previous_accepted_text"] == original_custom
+
+            # 3. Simulate model dropping candidate entirely
+            async def dropped_candidate(*args, **kwargs):
+                return [], "mock-dropped"
+
+            reviews_route.analyze_review = dropped_candidate
+            reanalyze2_res = await ac.post(f"/api/reviews/{review_id}/analyze")
+            assert reanalyze2_res.status_code == 200
+            findings = reanalyze2_res.json()["findings"]
+
+            # Must NOT be deleted!
+            assert len(findings) == 1
+            assert findings[0]["id"] == finding_id
+            assert findings[0]["previous_accepted_text"] == original_custom
+            assert findings[0]["needs_re_review"] is True
+        finally:
+            reviews_route.analyze_review = original_analyzer
+
+
+@pytest.mark.asyncio
+async def test_regression_database_column_auto_migration():
+    """
+    Regression Test 10:
+    Existing database with legacy schema missing new columns (e.g. raw_srt_bytes)
+    automatically migrates on create_all/startup without sqlite3.OperationalError.
+    """
+    from sqlalchemy import text
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        # Drop raw_srt_bytes to simulate pre-321fd46 database
+        await conn.execute(text("ALTER TABLE reviews DROP COLUMN raw_srt_bytes"))
+        # Run create_all (startup initialization)
+        await conn.run_sync(Base.metadata.create_all)
+        # Select Review
+        res = await conn.execute(select(Review))
+        assert res.scalars().all() == []
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_regression_byte_exact_edited_export_bom_and_padded_ids():
+    """
+    Regression Test 11:
+    Edited export must preserve original UTF-8 BOM, zero-padded cue IDs ('001'),
+    timestamp spacing, and trailing bytes.
+    """
+    raw = (
+        b"\xef\xbb\xbf001\r\n"
+        b"00:00:01,000   -->   00:00:04,000\r\n"
+        b"Dr. Thorne meets Agent Miller.\r\n"
+        b"\r\n\r\n"
+        b"002\r\n"
+        b"00:00:05,000 --> 00:00:08,000\r\n"
+        b"Untouched.\r\n\r\n"
+    )
+    parsed = parse_srt(raw.decode("utf-8"))
+    cues = [
+        Cue(
+            id=f"c{c.index}",
+            review_id="r",
+            index=c.index,
+            start_time=c.start_time,
+            end_time=c.end_time,
+            start_seconds=c.start_seconds,
+            end_seconds=c.end_seconds,
+            text=c.text
+        )
+        for c in parsed
+    ]
+    out = export_srt_bytes(raw, cues, {1: "A figure meets an investigator."})
+    assert out.startswith(b"\xef\xbb\xbf"), "BOM was not preserved"
+    assert b"001\r\n" in out, "Padded ID 001 was not preserved"
+    assert b"00:00:01,000   -->   00:00:04,000\r\n" in out, "Timestamp spacing not preserved"
+    assert out.endswith(b"Untouched.\r\n\r\n"), "Trailing bytes not preserved"
+
+

@@ -96,35 +96,71 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                 <td style={{ padding: '12px' }}>
                   <div><strong>Original Text:</strong> {cue.text}</div>
 
-                  {cueFindings.map((finding) => (
-                    <div key={finding.id} style={{ marginTop: '12px', padding: '12px', background: '#1a1a1a', borderLeft: '4px solid #f59e0b', borderRadius: '4px' }}>
-                      <p style={{ color: '#fbbf24', fontWeight: 'bold' }}>
-                        Premature Disclosure Flag: {finding.candidate_name} ({finding.uncertainty} uncertainty)
-                      </p>
-                      <p style={{ fontSize: '0.9rem', color: '#ccc', margin: '4px 0' }}>{finding.issue_description}</p>
-                      
-                      <div style={{ marginTop: '8px' }}>
-                        <label htmlFor={`proposal-${finding.id}`} style={{ display: 'block', fontSize: '0.85rem', color: '#34d399', fontWeight: 'bold', marginBottom: '4px' }}>
-                          Proposed Anonymized Wording:
-                        </label>
-                        <textarea
-                          id={`proposal-${finding.id}`}
-                          rows={2}
-                          value={editedProposals[finding.id] ?? (finding.edited_proposal || finding.proposed_text)}
-                          onChange={(e) => setEditedProposals({ ...editedProposals, [finding.id]: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            background: '#111',
-                            color: '#fff',
-                            border: '1px solid #444',
-                            borderRadius: '4px',
-                            fontSize: '0.9rem',
-                          }}
-                        />
+                  {cueFindings.map((finding) => {
+                    const serverProposal = finding.edited_proposal || finding.proposed_text;
+                    const draftText = editedProposals[finding.id] ?? serverProposal;
+                    const hasUnsavedDraft = draftText !== serverProposal;
+
+                    return (
+                      <div key={finding.id} style={{ marginTop: '12px', padding: '12px', background: '#1a1a1a', borderLeft: '4px solid #f59e0b', borderRadius: '4px' }}>
+                        <p style={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                          Premature Disclosure Flag: {finding.candidate_name} ({finding.uncertainty} uncertainty)
+                        </p>
+                        <p style={{ fontSize: '0.9rem', color: '#ccc', margin: '4px 0' }}>{finding.issue_description}</p>
+                        
+                        {finding.needs_re_review && (
+                          <div
+                            role="alert"
+                            style={{
+                              background: '#78350f',
+                              border: '1px solid #f59e0b',
+                              color: '#fef3c7',
+                              padding: '8px 12px',
+                              borderRadius: '4px',
+                              marginTop: '8px',
+                              marginBottom: '8px',
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            <strong>Re-review required:</strong> Latest analysis updated this proposal.
+                            {finding.previous_accepted_text && (
+                              <div style={{ marginTop: '4px', fontSize: '0.85rem', color: '#fed7aa' }}>
+                                Previously accepted wording: <em>"{finding.previous_accepted_text}"</em>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div style={{ marginTop: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <label htmlFor={`proposal-${finding.id}`} style={{ display: 'block', fontSize: '0.85rem', color: '#34d399', fontWeight: 'bold' }}>
+                              Proposed Anonymized Wording:
+                            </label>
+                            {hasUnsavedDraft && (
+                              <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>
+                                &bull; Unsaved draft edits
+                              </span>
+                            )}
+                          </div>
+                          <textarea
+                            id={`proposal-${finding.id}`}
+                            rows={2}
+                            value={draftText}
+                            onChange={(e) => setEditedProposals({ ...editedProposals, [finding.id]: e.target.value })}
+                            style={{
+                              width: '100%',
+                              padding: '6px 10px',
+                              background: '#111',
+                              color: '#fff',
+                              border: '1px solid #444',
+                              borderRadius: '4px',
+                              fontSize: '0.9rem',
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </td>
                 <td style={{ padding: '12px' }}>
                   {cueFindings.length > 0 ? (

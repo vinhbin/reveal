@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -134,29 +135,31 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
 """
 
         contents = []
-        has_video = os.path.exists(video_path) and os.path.getsize(video_path) > 1024
-        if has_video:
-            logger.info(f"Uploading video file {video_path} to Gemini...")
-            video_file = client.files.upload(file=video_path)
-            
-            # Poll until video processing state is ACTIVE
-            max_polls = 30
-            is_active = False
-            for _ in range(max_polls):
-                file_info = client.files.get(name=video_file.name)
-                state_name = getattr(file_info.state, "name", str(file_info.state))
-                if state_name == "ACTIVE":
-                    is_active = True
-                    break
-                if state_name == "FAILED":
-                    raise RuntimeError("Gemini video file processing failed.")
-                time.sleep(2)
-            
-            if not is_active:
-                raise RuntimeError("Gemini video file processing timed out (still not ACTIVE).")
-            
-            contents.append(video_file)
+        if not video_path or not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found or inaccessible: {video_path}")
+        if os.path.getsize(video_path) == 0:
+            raise ValueError(f"Video file is empty: {video_path}")
 
+        logger.info(f"Uploading video file {video_path} to Gemini...")
+        video_file = client.files.upload(file=video_path)
+        
+        # Poll until video processing state is ACTIVE
+        max_polls = 30
+        is_active = False
+        for _ in range(max_polls):
+            file_info = client.files.get(name=video_file.name)
+            state_name = getattr(file_info.state, "name", str(file_info.state))
+            if state_name == "ACTIVE":
+                is_active = True
+                break
+            if state_name == "FAILED":
+                raise RuntimeError("Gemini video file processing failed.")
+            time.sleep(2)
+        
+        if not is_active:
+            raise RuntimeError("Gemini video file processing timed out (still not ACTIVE).")
+        
+        contents.append(video_file)
         contents.append(prompt)
 
         response = client.models.generate_content(
@@ -196,8 +199,17 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
             elif unc_str == "high":
                 uncertainty = UncertaintyLevel.HIGH
 
-            interval_start = float(item.get("interval_start", 0.0))
-            interval_end = float(item.get("interval_end", 0.0))
+            try:
+                interval_start = float(item.get("interval_start", 0.0))
+                interval_end = float(item.get("interval_end", 0.0))
+            except (ValueError, TypeError):
+                continue
+
+            if not math.isfinite(interval_start) or not math.isfinite(interval_end):
+                logger.warning(
+                    f"Rejecting candidate finding #{c_idx} with non-finite interval [{interval_start}, {interval_end}]."
+                )
+                continue
 
             # REJECT invalid / out-of-bounds intervals rather than clamping
             if interval_start < 0.0 or interval_end > (max_duration + 1.0) or interval_start >= interval_end:

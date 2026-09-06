@@ -76,26 +76,42 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Keyboard controls for J, L, Space
+  // Keyboard controls for J, L, K, Space
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      const target = e.target as HTMLElement;
+      const isInteractive =
+        ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(target?.tagName) ||
+        target?.isContentEditable ||
+        target?.getAttribute('role') === 'button' ||
+        target?.getAttribute('role') === 'tab';
+
       if (e.code === 'Space') {
+        if (isInteractive) {
+          // Allow native button/link activation without intercepting or toggling playback
+          return;
+        }
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'KeyK') {
+        if (['INPUT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) return;
         e.preventDefault();
         togglePlay();
       } else if (e.code === 'KeyJ') {
+        if (['INPUT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) return;
         e.preventDefault();
         if (videoRef.current) {
-          const target = Math.max(0, videoRef.current.currentTime - 5);
-          videoRef.current.currentTime = target;
-          onTimeUpdate(target);
+          const newTarget = Math.max(0, videoRef.current.currentTime - 5);
+          videoRef.current.currentTime = newTarget;
+          onTimeUpdate(newTarget);
         }
       } else if (e.code === 'KeyL') {
+        if (['INPUT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) return;
         e.preventDefault();
         if (videoRef.current) {
-          const target = Math.min(duration || 9999, videoRef.current.currentTime + 5);
-          videoRef.current.currentTime = target;
-          onTimeUpdate(target);
+          const newTarget = Math.min(duration || 9999, videoRef.current.currentTime + 5);
+          videoRef.current.currentTime = newTarget;
+          onTimeUpdate(newTarget);
         }
       }
     };
@@ -259,7 +275,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Keyboard: <kbd>Space</kbd> Play/Pause &bull; <kbd>J</kbd>/<kbd>L</kbd> Seek 5s
+            Keyboard: <kbd>Space</kbd> / <kbd>K</kbd> Play/Pause &bull; <kbd>J</kbd>/<kbd>L</kbd> Seek 5s
           </div>
         </div>
       </div>

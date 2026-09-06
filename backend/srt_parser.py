@@ -147,6 +147,47 @@ def parse_srt(srt_content: str) -> List[ParsedCue]:
 
     return cues
 
+def _find_cue_spans(raw_bytes: bytes) -> Dict[int, Tuple[int, int]]:
+    """Locate (text_start_byte, text_end_byte) for each cue index in raw_bytes."""
+    delimiter = re.compile(rb"(\r?\n){2,}")
+    spans = {}
+    bom_len = 3 if raw_bytes.startswith(b"\xef\xbb\xbf") else 0
+    last_end = bom_len
+    block_seq = 1
+
+    for m in delimiter.finditer(raw_bytes, bom_len):
+        block_bytes = raw_bytes[last_end:m.start()]
+        if block_bytes.strip():
+            _process_byte_block(block_bytes, last_end, spans, block_seq)
+            block_seq += 1
+        last_end = m.end()
+
+    rem = raw_bytes[last_end:]
+    if rem.strip():
+        _process_byte_block(rem, last_end, spans, block_seq)
+    return spans
+
+def _process_byte_block(block_bytes: bytes, block_start: int, spans: Dict[int, Tuple[int, int]], block_seq: int):
+    lines = block_bytes.splitlines(keepends=True)
+    if not lines:
+        return
+    idx = None
+    time_line_idx = None
+    first_clean = lines[0].strip()
+    if first_clean.isdigit():
+        idx = int(first_clean)
+        time_line_idx = 1
+    elif b"-->" in lines[0]:
+        idx = block_seq
+        time_line_idx = 0
+
+    if time_line_idx is not None and time_line_idx < len(lines) and b"-->" in lines[time_line_idx]:
+        header_len = sum(len(l) for l in lines[:time_line_idx + 1])
+        text_start = block_start + header_len
+        trailing_newlines = len(block_bytes) - len(block_bytes.rstrip(b"\r\n"))
+        text_end = block_start + len(block_bytes) - trailing_newlines
+        spans[idx] = (text_start, text_end)
+
 def export_srt_bytes(
     raw_bytes: bytes,
     cues: List[Any],
@@ -155,18 +196,43 @@ def export_srt_bytes(
     """
     Build byte-exact SRT export.
     If no cues were revised, returns raw_bytes directly (100% byte-for-byte match).
-    For revised cues, preserves the original header, line endings, and untouched block bytes.
+    For revised cues, performs in-place byte span replacements, preserving BOM,
+    cue ID formatting, timestamp spacing, line endings, and inter-block separators.
     """
     if not cue_revisions:
         return raw_bytes
 
+    if not raw_bytes:
+        return export_srt([
+            {
+                "index": getattr(c, "index", 0),
+                "start_time": getattr(c, "start_time", ""),
+                "end_time": getattr(c, "end_time", ""),
+                "text": cue_revisions.get(getattr(c, "index", 0), getattr(c, "text", "")),
+                "is_modified": getattr(c, "index", 0) in cue_revisions
+            }
+            for c in cues
+        ]).encode("utf-8")
+
+    spans = _find_cue_spans(raw_bytes)
+    targets = [(spans[idx], cue_revisions[idx]) for idx in cue_revisions if idx in spans]
+
+    if targets:
+        # In-place byte replacement in reverse order so byte offsets do not shift
+        targets.sort(key=lambda t: t[0][0], reverse=True)
+        out = bytearray(raw_bytes)
+        for (s, e), new_text in targets:
+            encoded = new_text.strip().encode("utf-8")
+            out[s:e] = encoded
+        return bytes(out)
+
+    # Fallback to rebuilding if byte spans could not be matched
     try:
         raw_text = raw_bytes.decode("utf-8")
     except UnicodeDecodeError:
         raw_text = raw_bytes.decode("utf-8-sig")
 
     line_ending = detect_line_ending(raw_text)
-
     blocks = []
     for cue in sorted(cues, key=lambda c: getattr(c, "index", 0)):
         idx = getattr(cue, "index", 0)
@@ -174,7 +240,7 @@ def export_srt_bytes(
         raw_header = getattr(cue, "raw_header", "")
         start_time = getattr(cue, "start_time", "")
         end_time = getattr(cue, "end_time", "")
-        
+
         if idx in cue_revisions:
             new_text = cue_revisions[idx].strip()
             if raw_header:

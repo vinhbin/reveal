@@ -383,11 +383,19 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
                 db.add(new_finding)
 
         # For remaining findings that were NOT reported by the new analysis:
-        # If human had ACCEPTED it, do NOT delete it; retain it with needs_re_review flag
+        # If human had reviewed it (ACCEPTED, DISMISSED, INTENTIONAL, or archived accepted text), do NOT delete it!
         for remaining_f in existing_findings_map.values():
             if remaining_f.status == DecisionStatus.ACCEPTED:
                 remaining_f.needs_re_review = True
-                remaining_f.issue_description += " [Note: Dropped in latest model analysis]"
+                if "[Note: Dropped in latest model analysis]" not in remaining_f.issue_description:
+                    remaining_f.issue_description += " [Note: Dropped in latest model analysis]"
+            elif remaining_f.needs_re_review or remaining_f.previous_accepted_text:
+                # Retain finding with archived accepted text whose proposal was changed and now omitted
+                if "[Note: Dropped in latest model analysis]" not in remaining_f.issue_description:
+                    remaining_f.issue_description += " [Note: Dropped in latest model analysis]"
+            elif remaining_f.status in (DecisionStatus.DISMISSED, DecisionStatus.INTENTIONAL):
+                # Retain human editorial decisions
+                pass
             elif remaining_f.status == DecisionStatus.UNREVIEWED:
                 await db.delete(remaining_f)
 
@@ -435,6 +443,68 @@ async def update_finding(
     return finding
 
 
+def resolve_cue_text(cue_text: str, accepted_findings: list) -> str:
+    """
+    Resolves accepted cue revisions at the cue level.
+    If multiple findings exist on the same cue:
+    1. If any finding has an authoritative custom edit where none of the accepted candidate names remain, use it.
+    2. Otherwise, combines the accepted replacements from all findings onto the cue text without re-introducing concealed names.
+    """
+    if not accepted_findings:
+        return cue_text
+    if len(accepted_findings) == 1:
+        f = accepted_findings[0]
+        return (f.edited_proposal or f.proposed_text or cue_text).strip()
+
+    names = [f.candidate_name for f in accepted_findings if f.candidate_name]
+
+    # 1. Authoritative custom edit that eliminates all names
+    for f in reversed(accepted_findings):
+        proposal = (f.edited_proposal or f.proposed_text or "").strip()
+        if proposal and all(name not in proposal for name in names):
+            return proposal
+
+    # 2. Combine the accepted replacements
+    import difflib
+    result = cue_text
+    sorted_findings = sorted(accepted_findings, key=lambda f: len(f.candidate_name or ""), reverse=True)
+
+    for f in sorted_findings:
+        name = f.candidate_name
+        if not name or name not in result:
+            continue
+        proposal = (f.edited_proposal or f.proposed_text or "").strip()
+        if not proposal:
+            continue
+
+        replacement = None
+        if name in cue_text:
+            idx = cue_text.find(name)
+            prefix = cue_text[:idx]
+            suffix = cue_text[idx + len(name):]
+
+            if proposal.startswith(prefix) and (not suffix or proposal.endswith(suffix)) and len(proposal) >= len(prefix) + len(suffix):
+                replacement = proposal[len(prefix):len(proposal) - len(suffix)] if len(suffix) > 0 else proposal[len(prefix):]
+            else:
+                s = difflib.SequenceMatcher(None, cue_text, proposal)
+                blocks = s.get_matching_blocks()
+                for i in range(len(blocks) - 1):
+                    a_end = blocks[i].a + blocks[i].size
+                    next_a = blocks[i+1].a
+                    if a_end <= idx and next_a >= idx + len(name):
+                        b_start = blocks[i].b + blocks[i].size
+                        next_b = blocks[i+1].b
+                        replacement = proposal[b_start:next_b]
+                        break
+
+        if replacement is not None:
+            result = result.replace(name, replacement)
+        elif name not in proposal:
+            result = result.replace(name, "an unidentified figure")
+
+    return result
+
+
 @router.get("/{review_id}/export")
 async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
     """
@@ -456,13 +526,7 @@ async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
     for cue in review.cues:
         accepted_findings = [f for f in review.findings if f.cue_id == cue.id and f.status == DecisionStatus.ACCEPTED]
         if accepted_findings:
-            # When multiple findings exist on one cue, editor's custom edited_proposal is authoritative
-            # Prioritize an edited proposal that differs from proposed_text, otherwise latest accepted
-            custom_edited = [f for f in accepted_findings if f.edited_proposal and f.edited_proposal.strip() != f.proposed_text.strip()]
-            if custom_edited:
-                cue_revisions[cue.index] = custom_edited[-1].edited_proposal
-            else:
-                cue_revisions[cue.index] = accepted_findings[-1].edited_proposal or accepted_findings[-1].proposed_text
+            cue_revisions[cue.index] = resolve_cue_text(cue.text, accepted_findings)
 
     raw_bytes = review.raw_srt_bytes or review.srt_content.encode("utf-8")
     exported_bytes = export_srt_bytes(raw_bytes, review.cues, cue_revisions)

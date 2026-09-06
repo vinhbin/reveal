@@ -8,7 +8,7 @@ Reveal helps audio-description editors catch possible identity spoilers before a
 
 | Explore Reveal | Status |
 | --- | --- |
-| Demo video | YouTube link coming soon — 2:37 walkthrough prepared |
+| Demo video | [Watch the 2:37 Reveal demo on YouTube](https://youtu.be/py-tZLzaG-U) |
 | Try the app | Replit deployment in progress |
 | Hackathon submission | Devpost link coming soon |
 | Run locally | [Quick start](#run-locally) |

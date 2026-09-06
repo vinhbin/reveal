@@ -606,4 +606,43 @@ async def test_regression_multiline_revision_retains_crlf_style():
     assert out == expected
 
 
+@pytest.mark.asyncio
+async def test_regression_two_custom_accepted_edits_merged_safely():
+    """
+    Regression Test 15:
+    When two accepted findings on the same cue both contain custom sentences,
+    the resolver must combine them safely without discarding either edit and
+    without restoring any concealed name in the exported SRT.
+    """
+    from types import SimpleNamespace as NS
+    from backend.routes.reviews import resolve_cue_text
 
+    original = "John greets Sarah near the door."
+    f1 = NS(
+        candidate_name="John",
+        proposed_text="A man greets Sarah near the door.",
+        edited_proposal="A tall man quietly greets Sarah beside the exit."
+    )
+    f2 = NS(
+        candidate_name="Sarah",
+        proposed_text="John greets a woman near the door.",
+        edited_proposal="John warmly greets a woman near the door."
+    )
+
+    resolved = resolve_cue_text(original, [f1, f2])
+
+    assert "John" not in resolved, "Concealed name John was re-exposed"
+    assert "Sarah" not in resolved, "Concealed name Sarah was re-exposed"
+    assert "tall man" in resolved, "Custom subject from f1 was lost"
+    assert "quietly" in resolved, "Custom manner from f1 was lost"
+    assert "beside the exit" in resolved, "Custom location from f1 was lost"
+    assert "woman" in resolved, "Concealment from f2 was lost"
+
+    # Verify through SRT export
+    raw = b"1\r\n00:00:01,000 --> 00:00:04,000\r\nJohn greets Sarah near the door.\r\n\r\n"
+    cues = parse_srt(raw.decode())
+    out_bytes = export_srt_bytes(raw, cues, {1: resolved})
+
+    assert b"John" not in out_bytes, "Exported SRT contains concealed name John"
+    assert b"Sarah" not in out_bytes, "Exported SRT contains concealed name Sarah"
+    assert b"A tall man quietly greets a woman beside the exit." in out_bytes, "Exported SRT missing resolved cue text"

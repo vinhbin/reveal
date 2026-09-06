@@ -447,16 +447,42 @@ async def update_finding(
 
 def _extract_entity_replacement(cue_text: str, name: str, proposal: str) -> str:
     """Extracts what `name` was replaced with in `proposal` relative to `cue_text`."""
-    if not name or name not in cue_text:
+    if not name or name not in cue_text or not proposal:
         return ""
     idx = cue_text.find(name)
     prefix = cue_text[:idx]
     suffix = cue_text[idx + len(name):]
 
+    # 1. Exact prefix/suffix match
     if proposal.startswith(prefix) and (not suffix or proposal.endswith(suffix)) and len(proposal) >= len(prefix) + len(suffix):
         return proposal[len(prefix):len(proposal) - len(suffix)] if len(suffix) > 0 else proposal[len(prefix):]
 
-    import difflib
+    # 2. Token-level diff matching
+    cue_tokens = re.findall(r"\w+|[^\w\s]", cue_text)
+    prop_tokens = re.findall(r"\w+|[^\w\s]", proposal)
+    name_tokens = re.findall(r"\w+|[^\w\s]", name)
+    name_len = len(name_tokens)
+    name_start = -1
+    for i in range(len(cue_tokens) - name_len + 1):
+        if cue_tokens[i:i + name_len] == name_tokens:
+            name_start = i
+            break
+
+    if name_start != -1:
+        s = difflib.SequenceMatcher(None, cue_tokens, prop_tokens)
+        for tag, alo, ahi, blo, bhi in s.get_opcodes():
+            if alo <= name_start and ahi >= name_start + name_len:
+                repl_tokens = prop_tokens[blo:bhi]
+                if repl_tokens:
+                    res = ""
+                    for t in repl_tokens:
+                        if res and re.match(r"^\w", t):
+                            res += " " + t
+                        else:
+                            res += t
+                    return res
+
+    # 3. Fallback character-level diff matching
     s = difflib.SequenceMatcher(None, cue_text, proposal)
     blocks = s.get_matching_blocks()
     for i in range(len(blocks) - 1):
@@ -474,9 +500,10 @@ def resolve_cue_text(cue_text: str, accepted_findings: list) -> str:
     Resolves accepted cue revisions at the cue level.
     If multiple findings exist on the same cue:
     1. If any finding has an authoritative custom edit where none of the accepted candidate names remain, use it.
-    2. If any finding has a customized edit differing from default proposal, uses it as the base sentence and
-       applies the other accepted findings' entity replacements to it (preserving all descriptions, actions, locations).
-    3. Otherwise, combines the accepted replacements onto cue_text without restoring concealed names or inventing text.
+    2. If custom edits exist differing from default proposals:
+       Evaluates candidate base sentences to preserve approved actions, descriptions, and locations
+       while absorbing other accepted entity replacements without re-exposing concealed names.
+    3. Guarantees that no accepted finding's concealed name is restored in the exported text.
     """
     if not accepted_findings:
         return cue_text
@@ -489,8 +516,24 @@ def resolve_cue_text(cue_text: str, accepted_findings: list) -> str:
     # 1. Authoritative custom edit that eliminates all names
     for f in reversed(accepted_findings):
         proposal = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
-        if proposal and all(name not in proposal for name in names):
+        if proposal and all(not re.search(rf"\b{re.escape(name)}\b", proposal) for name in names if name):
             return proposal
+
+    def get_replacement_for_finding(f):
+        name = getattr(f, "candidate_name", "")
+        if not name:
+            return ""
+        edited = (getattr(f, "edited_proposal", None) or "").strip()
+        if edited:
+            repl = _extract_entity_replacement(cue_text, name, edited)
+            if repl and not re.search(rf"\b{re.escape(name)}\b", repl):
+                return repl
+        prop = (getattr(f, "proposed_text", None) or "").strip()
+        if prop:
+            repl = _extract_entity_replacement(cue_text, name, prop)
+            if repl and not re.search(rf"\b{re.escape(name)}\b", repl):
+                return repl
+        return ""
 
     # 2. Check for custom edits differing from default proposed_text
     custom_findings = [
@@ -500,31 +543,54 @@ def resolve_cue_text(cue_text: str, accepted_findings: list) -> str:
     ]
 
     if custom_findings:
-        base_f = custom_findings[-1]
-        result = (getattr(base_f, "edited_proposal", "") or "").strip()
-        other_findings = [f for f in accepted_findings if f != base_f]
-        for f in other_findings:
+        # Sort candidates by comprehensive editorial changes (lowest similarity ratio to cue_text first)
+        def _edit_distance(f):
+            txt = (getattr(f, "edited_proposal", "") or "").strip()
+            return difflib.SequenceMatcher(None, cue_text, txt).ratio()
+
+        sorted_custom = sorted(custom_findings, key=_edit_distance)
+
+        best_result = None
+        best_unresolved_count = 999
+
+        for base_f in sorted_custom:
+            cand = (getattr(base_f, "edited_proposal", "") or "").strip()
+            other_findings = [f for f in accepted_findings if f != base_f]
+            for f in other_findings:
+                name = getattr(f, "candidate_name", "")
+                if name and re.search(rf"\b{re.escape(name)}\b", cand):
+                    repl = get_replacement_for_finding(f)
+                    if repl:
+                        cand = re.sub(rf"\b{re.escape(name)}\b", repl, cand)
+
+            remaining = [name for name in names if re.search(rf"\b{re.escape(name)}\b", cand)]
+            if len(remaining) < best_unresolved_count:
+                best_unresolved_count = len(remaining)
+                best_result = cand
+                if best_unresolved_count == 0:
+                    break
+
+        result = best_result or (getattr(sorted_custom[0], "edited_proposal", "") or "").strip()
+
+        # Enforce name concealment guarantee: purge any remaining concealed names
+        for f in accepted_findings:
             name = getattr(f, "candidate_name", "")
-            if name and name in result:
-                prop = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
-                repl = _extract_entity_replacement(cue_text, name, prop)
+            if name and re.search(rf"\b{re.escape(name)}\b", result):
+                repl = get_replacement_for_finding(f)
                 if repl:
                     result = re.sub(rf"\b{re.escape(name)}\b", repl, result)
+
         return result
 
-    # 3. Default proposals merge
+    # 3. Default proposals merge onto original cue_text
     result = cue_text
     sorted_findings = sorted(accepted_findings, key=lambda f: len(getattr(f, "candidate_name", "") or ""), reverse=True)
 
     for f in sorted_findings:
         name = getattr(f, "candidate_name", "")
-        if not name or name not in result:
+        if not name or not re.search(rf"\b{re.escape(name)}\b", result):
             continue
-        proposal = (getattr(f, "edited_proposal", None) or getattr(f, "proposed_text", None) or "").strip()
-        if not proposal:
-            continue
-
-        repl = _extract_entity_replacement(cue_text, name, proposal)
+        repl = get_replacement_for_finding(f)
         if repl:
             result = re.sub(rf"\b{re.escape(name)}\b", repl, result)
 

@@ -3,6 +3,11 @@ export type DecisionStatus = 'unreviewed' | 'accepted' | 'dismissed' | 'intentio
 export type EvidenceOrigin = 'model_inference' | 'dialogue' | 'filmmaker_intent' | 'human_verification';
 export type UncertaintyLevel = 'low' | 'medium' | 'high';
 
+export interface SeekRequest {
+  time: number;
+  nonce: number;
+}
+
 export interface Cue {
   id: string;
   review_id: string;
@@ -23,6 +28,8 @@ export interface Finding {
   issue_description: string;
   proposed_text: string;
   edited_proposal: string;
+  previous_accepted_text?: string;
+  needs_re_review?: boolean;
   evidence_origin: EvidenceOrigin;
   interval_start: number;
   interval_end: number;

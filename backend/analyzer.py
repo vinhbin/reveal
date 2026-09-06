@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 from typing import List, Dict, Any, Optional, Tuple
 from backend.config import GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT, REVEAL_MODEL
@@ -16,6 +17,22 @@ COMMON_EXCLUSIONS = {
     "Suddenly", "Meanwhile", "Then", "As", "With", "After", "Before", "Inside",
     "Outside", "Behind", "Across", "Above", "Below", "Slowly", "Quickly", "Cue"
 }
+
+def get_media_duration(video_path: str) -> Optional[float]:
+    """Inspects video container with ffprobe to extract real duration in seconds."""
+    if not os.path.exists(video_path) or os.path.getsize(video_path) < 100:
+        return None
+    try:
+        cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", video_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        if res.returncode == 0 and res.stdout.strip():
+            return float(res.stdout.strip())
+    except Exception as e:
+        logger.warning(f"Failed to probe media duration for {video_path}: {e}")
+    return None
 
 class CandidateFinding:
     def __init__(
@@ -42,7 +59,8 @@ class CandidateFinding:
 async def analyze_review(
     video_path: str,
     cues: List[Dict[str, Any]],
-    intent_notes: Optional[str] = ""
+    intent_notes: Optional[str] = "",
+    media_duration: Optional[float] = None
 ) -> Tuple[List[CandidateFinding], str]:
     """
     Analyzes AD cues against video and intent notes.
@@ -53,22 +71,23 @@ async def analyze_review(
 
     if is_live_configured:
         try:
-            return await _run_gemini_analysis_threaded(video_path, cues, intent_notes)
+            return await _run_gemini_analysis_threaded(video_path, cues, intent_notes, media_duration)
         except Exception as e:
             logger.error(f"Live Gemini API analysis failed: {e}")
             raise RuntimeError(f"Live model analysis failed: {str(e)}")
 
     # Deterministic offline heuristic mode when no API key configured
-    findings = run_heuristic_analysis(cues, intent_notes)
+    findings = run_heuristic_analysis(cues, intent_notes, media_duration)
     return findings, "reveal-heuristic-analyzer (offline demo mode)"
 
 
 async def _run_gemini_analysis_threaded(
     video_path: str,
     cues: List[Dict[str, Any]],
-    intent_notes: Optional[str] = ""
+    intent_notes: Optional[str] = "",
+    media_duration: Optional[float] = None
 ) -> Tuple[List[CandidateFinding], str]:
-    """Runs synchronous google-genai client calls in a background thread."""
+    """Runs synchronous google-genai client calls in a background thread with strict validation."""
     def _sync_call():
         from google import genai
         from google.genai import types
@@ -115,20 +134,26 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
 """
 
         contents = []
-        if os.path.exists(video_path) and os.path.getsize(video_path) > 1024:
+        has_video = os.path.exists(video_path) and os.path.getsize(video_path) > 1024
+        if has_video:
             logger.info(f"Uploading video file {video_path} to Gemini...")
             video_file = client.files.upload(file=video_path)
             
             # Poll until video processing state is ACTIVE
             max_polls = 30
+            is_active = False
             for _ in range(max_polls):
                 file_info = client.files.get(name=video_file.name)
                 state_name = getattr(file_info.state, "name", str(file_info.state))
                 if state_name == "ACTIVE":
+                    is_active = True
                     break
                 if state_name == "FAILED":
                     raise RuntimeError("Gemini video file processing failed.")
                 time.sleep(2)
+            
+            if not is_active:
+                raise RuntimeError("Gemini video file processing timed out (still not ACTIVE).")
             
             contents.append(video_file)
 
@@ -147,6 +172,7 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
         findings_data = json.loads(raw_text)
 
         max_cue_index = max((c["index"] for c in cues), default=9999)
+        max_duration = media_duration or (max((c.get("end_seconds", 0.0) for c in cues), default=0.0) + 1.0)
         valid_findings = []
 
         for item in findings_data:
@@ -160,7 +186,7 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
             elif origin_str == "filmmaker_intent":
                 origin = EvidenceOrigin.FILMMAKER_INTENT
             else:
-                # Force model_inference; disallow model claiming human_verification
+                # Disallow model claiming human_verification
                 origin = EvidenceOrigin.MODEL_INFERENCE
 
             unc_str = str(item.get("uncertainty", "medium")).lower()
@@ -170,8 +196,15 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
             elif unc_str == "high":
                 uncertainty = UncertaintyLevel.HIGH
 
-            interval_start = max(0.0, float(item.get("interval_start", 0.0)))
-            interval_end = max(interval_start, float(item.get("interval_end", 0.0)))
+            interval_start = float(item.get("interval_start", 0.0))
+            interval_end = float(item.get("interval_end", 0.0))
+
+            # REJECT invalid / out-of-bounds intervals rather than clamping
+            if interval_start < 0.0 or interval_end > (max_duration + 1.0) or interval_start >= interval_end:
+                logger.warning(
+                    f"Rejecting candidate finding #{c_idx} with invalid interval [{interval_start}, {interval_end}] vs max {max_duration}."
+                )
+                continue
 
             valid_findings.append(CandidateFinding(
                 cue_index=c_idx,
@@ -189,7 +222,11 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
     return await asyncio.to_thread(_sync_call)
 
 
-def run_heuristic_analysis(cues: List[Dict[str, Any]], intent_notes: Optional[str] = "") -> List[CandidateFinding]:
+def run_heuristic_analysis(
+    cues: List[Dict[str, Any]],
+    intent_notes: Optional[str] = "",
+    media_duration: Optional[float] = None
+) -> List[CandidateFinding]:
     """
     Deterministic rule-based analyzer that detects proper names used early in AD cues
     before an explicit reveal context, dialogue, or filmmaker intent flag.
@@ -215,6 +252,8 @@ def run_heuristic_analysis(cues: List[Dict[str, Any]], intent_notes: Optional[st
                 name_occurrences[name] = []
             name_occurrences[name].append(cue)
 
+    max_duration = media_duration or (max((c.get("end_seconds", 0.0) for c in cues), default=0.0) + 1.0)
+
     for name, occurrences in name_occurrences.items():
         first_cue = occurrences[0]
         first_cue_idx = first_cue["index"]
@@ -226,7 +265,7 @@ def run_heuristic_analysis(cues: List[Dict[str, Any]], intent_notes: Optional[st
         is_concealed = matched_in_notes or (first_cue_start < 30.0)
 
         if is_concealed:
-            later_reveal_time = first_cue_start + 45.0
+            later_reveal_time = min(first_cue_start + 45.0, max_duration)
             
             proposed_text = first_cue["text"]
             if name in proposed_text:

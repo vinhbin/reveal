@@ -1,9 +1,10 @@
 import os
 import shutil
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, status
 from fastapi.responses import FileResponse
+from sqlalchemy import update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -17,14 +18,26 @@ from backend.schemas import (
     FindingSchema,
     FindingUpdateSchema
 )
-from backend.srt_parser import parse_srt, export_srt
-from backend.analyzer import analyze_review
+from backend.srt_parser import parse_srt, export_srt_bytes
+from backend.analyzer import analyze_review, get_media_duration
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
 MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB
+MIN_VIDEO_SIZE = 1024               # 1KB
 MAX_SRT_SIZE = 5 * 1024 * 1024      # 5MB
 ALLOWED_VIDEO_EXTS = {".mp4", ".webm"}
+
+
+def validate_video_magic_bytes(header: bytes, ext: str) -> bool:
+    """Validate that file header contains valid MP4 or WebM magic signatures."""
+    if len(header) < 12:
+        return False
+    if ext == ".mp4":
+        return b"ftyp" in header[:32]
+    if ext == ".webm":
+        return header.startswith(b"\x1a\x45\xdf\xa3")
+    return False
 
 
 @router.post("", response_model=ReviewSchema, status_code=status.HTTP_201_CREATED)
@@ -46,14 +59,17 @@ async def create_review(
             detail=f"Unsupported video file type '{video_ext}'. Only MP4 and WebM are supported."
         )
 
-    # Save video file with size check
+    # Save video file with size and magic bytes check
     saved_video_filename = f"{review_id}{video_ext}"
     saved_video_path = str(UPLOAD_DIR / saved_video_filename)
     
     file_size = 0
+    header_bytes = b""
     with open(saved_video_path, "wb") as f:
         while chunk := await video_file.read(1024 * 1024):
             file_size += len(chunk)
+            if len(header_bytes) < 32:
+                header_bytes += chunk[:32 - len(header_bytes)]
             if file_size > MAX_VIDEO_SIZE:
                 f.close()
                 if os.path.exists(saved_video_path):
@@ -61,14 +77,27 @@ async def create_review(
                 raise HTTPException(status_code=400, detail="Video file exceeds 200MB size limit.")
             f.write(chunk)
 
-    # Read SRT content with size check
+    if file_size < MIN_VIDEO_SIZE or not validate_video_magic_bytes(header_bytes, video_ext):
+        if os.path.exists(saved_video_path):
+            os.remove(saved_video_path)
+        raise HTTPException(status_code=400, detail="Invalid video file: missing valid MP4/WebM container header or file too small.")
+
+    # Read SRT content with size and encoding check
     srt_bytes = await srt_file.read()
     if len(srt_bytes) > MAX_SRT_SIZE:
         if os.path.exists(saved_video_path):
             os.remove(saved_video_path)
         raise HTTPException(status_code=400, detail="SRT script file exceeds 5MB size limit.")
 
-    srt_content = srt_bytes.decode("utf-8-sig", errors="replace")
+    try:
+        srt_content = srt_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            srt_content = srt_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            if os.path.exists(saved_video_path):
+                os.remove(saved_video_path)
+            raise HTTPException(status_code=400, detail="Invalid SRT file: must be valid UTF-8 encoding.")
 
     # Parse SRT cues
     try:
@@ -81,6 +110,9 @@ async def create_review(
             detail=f"Failed to parse SRT file: {str(e)}"
         )
 
+    # Probe real duration
+    media_duration = get_media_duration(saved_video_path)
+
     # Create Review object
     review = Review(
         id=review_id,
@@ -89,12 +121,14 @@ async def create_review(
         video_path=saved_video_path,
         srt_filename=srt_file.filename,
         srt_content=srt_content,
+        raw_srt_bytes=srt_bytes,
+        media_duration=media_duration,
         intent_notes=intent_notes or "",
         status=ReviewStatus.PENDING
     )
     db.add(review)
 
-    # Create Cue objects
+    # Create Cue objects with raw block tracking
     for c in parsed_cues:
         db.add(Cue(
             id=str(uuid.uuid4()),
@@ -104,12 +138,20 @@ async def create_review(
             end_time=c.end_time,
             start_seconds=c.start_seconds,
             end_seconds=c.end_seconds,
-            text=c.text
+            text=c.text,
+            raw_block=c.raw_block,
+            start_byte=c.start_char,
+            end_byte=c.end_char
         ))
 
     await db.commit()
-    await db.refresh(review, ["cues", "findings"])
-    return review
+    db.expire_all()
+    res = await db.execute(
+        select(Review)
+        .options(selectinload(Review.cues), selectinload(Review.findings))
+        .filter(Review.id == review_id)
+    )
+    return res.scalars().first()
 
 
 @router.post("/sample", response_model=ReviewSchema, status_code=status.HTTP_201_CREATED)
@@ -118,13 +160,6 @@ async def create_sample_review(db: AsyncSession = Depends(get_db)):
     review_id = str(uuid.uuid4())
     sample_video_path = SAMPLES_DIR / "sample_short.mp4"
     sample_srt_path = SAMPLES_DIR / "sample_ad.srt"
-
-    # Minimal valid 1-second silent MP4 header bytes if sample video doesn't exist
-    VALID_MINIMAL_MP4 = (
-        b"\x00\x00\x00\x1cftypisom\x00\x00\x02\x00isomiso2avc1mp41"
-        b"\x00\x00\x00\x08free"
-        b"\x00\x00\x00\x40mdat" + b"\x00" * 56
-    )
 
     if not sample_srt_path.exists():
         sample_srt_content = """1
@@ -150,17 +185,15 @@ A badge pinned to his coat shines: Detective Vance, Precinct 4.
         with open(sample_srt_path, "w", encoding="utf-8") as f:
             f.write(sample_srt_content)
 
-    if not sample_video_path.exists() or sample_video_path.stat().st_size < 100:
-        with open(sample_video_path, "wb") as f:
-            f.write(VALID_MINIMAL_MP4)
+    with open(sample_srt_path, "rb") as f:
+        srt_bytes = f.read()
+    srt_content = srt_bytes.decode("utf-8")
 
     saved_video_path = str(UPLOAD_DIR / f"{review_id}.mp4")
-    shutil.copyfile(sample_video_path, saved_video_path)
-
-    with open(sample_srt_path, "r", encoding="utf-8") as f:
-        srt_content = f.read()
+    shutil.copyfile(str(sample_video_path), saved_video_path)
 
     parsed_cues = parse_srt(srt_content)
+    media_duration = get_media_duration(saved_video_path) or 72.0
     intent_notes = "The identity of Dr. Aris Thorne is intended to remain concealed until the unmasking climax. Cue #3 prematurely names Dr. Aris Thorne."
 
     review = Review(
@@ -170,6 +203,8 @@ A badge pinned to his coat shines: Detective Vance, Precinct 4.
         video_path=saved_video_path,
         srt_filename="sample_ad.srt",
         srt_content=srt_content,
+        raw_srt_bytes=srt_bytes,
+        media_duration=media_duration,
         intent_notes=intent_notes,
         status=ReviewStatus.PENDING
     )
@@ -184,7 +219,10 @@ A badge pinned to his coat shines: Detective Vance, Precinct 4.
             end_time=c.end_time,
             start_seconds=c.start_seconds,
             end_seconds=c.end_seconds,
-            text=c.text
+            text=c.text,
+            raw_block=c.raw_block,
+            start_byte=c.start_char,
+            end_byte=c.end_char
         ))
 
     await db.commit()
@@ -233,18 +271,33 @@ async def get_review(review_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{review_id}/analyze", response_model=ReviewSchema)
 async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
-    """Run multimodal / heuristic analysis to detect premature identity disclosures."""
+    """
+    Run multimodal / heuristic analysis with ATOMIC concurrency protection.
+    Preserves existing human decisions and accepted text, flagging changed proposals for re-review.
+    """
+    # Atomic conditional claim: only transitions if status != ANALYZING
+    claim_stmt = (
+        update(Review)
+        .where(Review.id == review_id, Review.status != ReviewStatus.ANALYZING)
+        .values(status=ReviewStatus.ANALYZING)
+    )
+    claim_res = await db.execute(claim_stmt)
+    if claim_res.rowcount == 0:
+        # Check if review doesn't exist vs already analyzing
+        check_res = await db.execute(select(Review).filter(Review.id == review_id))
+        if not check_res.scalars().first():
+            raise HTTPException(status_code=404, detail="Review not found")
+        raise HTTPException(status_code=409, detail="Analysis is already in progress for this review.")
+    
+    await db.commit()
+
+    # Fetch review with cues and findings
     result = await db.execute(
         select(Review)
         .options(selectinload(Review.cues), selectinload(Review.findings))
         .filter(Review.id == review_id)
     )
     review = result.scalars().first()
-    if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
-
-    review.status = ReviewStatus.ANALYZING
-    await db.commit()
 
     cues_dict = [
         {
@@ -263,37 +316,80 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
         candidate_findings, model_name = await analyze_review(
             video_path=review.video_path,
             cues=cues_dict,
-            intent_notes=review.intent_notes
+            intent_notes=review.intent_notes,
+            media_duration=review.media_duration
         )
 
-        # Only delete old findings AFTER new analysis succeeds
-        for existing_f in list(review.findings):
-            await db.delete(existing_f)
-        await db.commit()
-
         cue_map = {c.index: c for c in review.cues}
+        existing_findings_map = {
+            (f.cue_index, f.candidate_name): f
+            for f in review.findings
+        }
 
         for cand in candidate_findings:
             target_cue = cue_map.get(cand.cue_index)
             if not target_cue:
                 continue
 
-            finding_obj = Finding(
-                id=str(uuid.uuid4()),
-                review_id=review.id,
-                cue_id=target_cue.id,
-                cue_index=cand.cue_index,
-                candidate_name=cand.candidate_name,
-                issue_description=cand.issue_description,
-                proposed_text=cand.proposed_text,
-                edited_proposal=cand.proposed_text,
-                evidence_origin=cand.evidence_origin,
-                interval_start=cand.interval_start,
-                interval_end=cand.interval_end,
-                uncertainty=cand.uncertainty,
-                status=DecisionStatus.UNREVIEWED
-            )
-            db.add(finding_obj)
+            key = (cand.cue_index, cand.candidate_name)
+            if key in existing_findings_map:
+                existing_f = existing_findings_map.pop(key)
+                
+                # Check if model proposal changed
+                proposal_changed = (cand.proposed_text.strip() != existing_f.proposed_text.strip())
+                
+                if existing_f.status == DecisionStatus.ACCEPTED:
+                    if proposal_changed:
+                        # Proposal changed: require re-review, preserve previous accepted wording
+                        existing_f.previous_accepted_text = existing_f.edited_proposal or existing_f.proposed_text
+                        existing_f.status = DecisionStatus.UNREVIEWED
+                        existing_f.needs_re_review = True
+                        existing_f.proposed_text = cand.proposed_text
+                        existing_f.edited_proposal = cand.proposed_text
+                    # If unchanged, keep existing_f.status == ACCEPTED and keep edited_proposal intact!
+                elif existing_f.status in (DecisionStatus.DISMISSED, DecisionStatus.INTENTIONAL):
+                    # Preserve decision status
+                    pass
+                else:
+                    # UNREVIEWED: update proposal if not custom edited
+                    if existing_f.edited_proposal == existing_f.proposed_text:
+                        existing_f.edited_proposal = cand.proposed_text
+                    existing_f.proposed_text = cand.proposed_text
+
+                # Update metadata
+                existing_f.issue_description = cand.issue_description
+                existing_f.evidence_origin = cand.evidence_origin
+                existing_f.interval_start = cand.interval_start
+                existing_f.interval_end = cand.interval_end
+                existing_f.uncertainty = cand.uncertainty
+            else:
+                # Brand new finding
+                new_finding = Finding(
+                    id=str(uuid.uuid4()),
+                    review_id=review.id,
+                    cue_id=target_cue.id,
+                    cue_index=cand.cue_index,
+                    candidate_name=cand.candidate_name,
+                    issue_description=cand.issue_description,
+                    proposed_text=cand.proposed_text,
+                    edited_proposal=cand.proposed_text,
+                    evidence_origin=cand.evidence_origin,
+                    interval_start=cand.interval_start,
+                    interval_end=cand.interval_end,
+                    uncertainty=cand.uncertainty,
+                    status=DecisionStatus.UNREVIEWED,
+                    needs_re_review=False
+                )
+                db.add(new_finding)
+
+        # For remaining findings that were NOT reported by the new analysis:
+        # If human had ACCEPTED it, do NOT delete it; retain it with needs_re_review flag
+        for remaining_f in existing_findings_map.values():
+            if remaining_f.status == DecisionStatus.ACCEPTED:
+                remaining_f.needs_re_review = True
+                remaining_f.issue_description += " [Note: Dropped in latest model analysis]"
+            elif remaining_f.status == DecisionStatus.UNREVIEWED:
+                await db.delete(remaining_f)
 
         review.status = ReviewStatus.COMPLETED
         review.model_used = model_name
@@ -303,8 +399,13 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
         review.error_message = f"Analysis failed: {str(e)}"
     
     await db.commit()
-    await db.refresh(review, ["cues", "findings"])
-    return review
+    db.expire_all()
+    res = await db.execute(
+        select(Review)
+        .options(selectinload(Review.cues), selectinload(Review.findings))
+        .filter(Review.id == review_id)
+    )
+    return res.scalars().first()
 
 
 @router.patch("/{review_id}/findings/{finding_id}", response_model=FindingSchema)
@@ -324,6 +425,8 @@ async def update_finding(
 
     if payload.status is not None:
         finding.status = payload.status
+        if payload.status == DecisionStatus.ACCEPTED:
+            finding.needs_re_review = False
     if payload.edited_proposal is not None:
         finding.edited_proposal = payload.edited_proposal
 
@@ -336,8 +439,8 @@ async def update_finding(
 async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
     """
     Export the updated SRT script.
-    Resolves multiple accepted findings per cue sequentially.
-    Preserves exact original timing, numbering, and untouched text.
+    Byte-exact preservation for untouched cues.
+    Resolves accepted cue revisions at the cue level.
     """
     result = await db.execute(
         select(Review)
@@ -348,41 +451,26 @@ async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    # Group accepted findings by cue_id
-    cue_findings_map = {}
-    for f in review.findings:
-        if f.cue_id not in cue_findings_map:
-            cue_findings_map[f.cue_id] = []
-        cue_findings_map[f.cue_id].append(f)
-
-    cues_to_export = []
+    # Map accepted revisions by cue index
+    cue_revisions: Dict[int, str] = {}
     for cue in review.cues:
-        findings_for_cue = cue_findings_map.get(cue.id, [])
-        accepted_findings = [f for f in findings_for_cue if f.status == DecisionStatus.ACCEPTED]
-
+        accepted_findings = [f for f in review.findings if f.cue_id == cue.id and f.status == DecisionStatus.ACCEPTED]
         if accepted_findings:
-            # Apply accepted text edit (or sequentially apply if multiple)
-            final_text = accepted_findings[-1].edited_proposal or accepted_findings[-1].proposed_text
-            is_modified = True
-        else:
-            final_text = cue.text
-            is_modified = False
+            # When multiple findings exist on one cue, editor's custom edited_proposal is authoritative
+            # Prioritize an edited proposal that differs from proposed_text, otherwise latest accepted
+            custom_edited = [f for f in accepted_findings if f.edited_proposal and f.edited_proposal.strip() != f.proposed_text.strip()]
+            if custom_edited:
+                cue_revisions[cue.index] = custom_edited[-1].edited_proposal
+            else:
+                cue_revisions[cue.index] = accepted_findings[-1].edited_proposal or accepted_findings[-1].proposed_text
 
-        cues_to_export.append({
-            "index": cue.index,
-            "start_time": cue.start_time,
-            "end_time": cue.end_time,
-            "text": final_text,
-            "is_modified": is_modified,
-            "raw_block": f"{cue.index}\n{cue.start_time} --> {cue.end_time}\n{cue.text}"
-        })
-
-    exported_srt = export_srt(cues_to_export)
+    raw_bytes = review.raw_srt_bytes or review.srt_content.encode("utf-8")
+    exported_bytes = export_srt_bytes(raw_bytes, review.cues, cue_revisions)
     filename = f"edited_{review.srt_filename}"
 
     return Response(
-        content=exported_srt,
-        media_type="text/plain",
+        content=exported_bytes,
+        media_type="application/x-subrip",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
@@ -410,7 +498,7 @@ async def delete_review(review_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{review_id}/video")
 async def get_review_video(review_id: str, db: AsyncSession = Depends(get_db)):
-    """Stream uploaded video file."""
+    """Stream uploaded video file with byte-range support."""
     result = await db.execute(select(Review).filter(Review.id == review_id))
     review = result.scalars().first()
     if not review or not os.path.exists(review.video_path):

@@ -26,7 +26,11 @@ def timestamp_to_seconds_pair(time_line: str) -> Tuple[float, float, str, str]:
     parts = time_line.split("-->")
     start_str = parts[0].strip()
     end_str = parts[1].strip()
-    return timestamp_to_seconds(start_str), timestamp_to_seconds(end_str), start_str, end_str
+    start_sec = timestamp_to_seconds(start_str)
+    end_sec = timestamp_to_seconds(end_str)
+    if start_sec >= end_sec:
+        raise ValueError(f"Invalid timestamp interval: start ({start_str}) must be strictly before end ({end_str}).")
+    return start_sec, end_sec, start_str, end_str
 
 def seconds_to_timestamp(seconds: float) -> str:
     """Convert float seconds to HH:MM:SS,mmm format."""
@@ -48,7 +52,10 @@ class ParsedCue:
         start_seconds: float,
         end_seconds: float,
         text: str,
-        raw_block: str = ""
+        raw_block: str = "",
+        raw_header: str = "",
+        start_char: int = 0,
+        end_char: int = 0
     ):
         self.index = index
         self.start_time = start_time
@@ -57,38 +64,70 @@ class ParsedCue:
         self.end_seconds = end_seconds
         self.text = text
         self.raw_block = raw_block
+        self.raw_header = raw_header
+        self.start_char = start_char
+        self.end_char = end_char
+
+def detect_line_ending(content: str) -> str:
+    """Detect whether file uses CRLF or LF."""
+    if "\r\n" in content:
+        return "\r\n"
+    return "\n"
 
 def parse_srt(srt_content: str) -> List[ParsedCue]:
-    """Parse raw SRT content string into a list of ParsedCue objects."""
+    """Parse raw SRT content string into a list of ParsedCue objects with exact boundary tracking."""
     if not srt_content or not srt_content.strip():
         raise ValueError("SRT content is empty.")
 
-    content = srt_content.strip("\ufeff")
-    # Preserve original line endings by splitting blocks
-    blocks = re.split(r"(?:\r?\n){2,}", content.strip())
-    cues: List[ParsedCue] = []
+    clean_content = srt_content.lstrip("\ufeff")
+    
+    # Split content by double newlines while tracking positions
+    delimiter_regex = re.compile(r"(\r?\n){2,}")
+    raw_blocks: List[Tuple[str, int, int]] = []
+    
+    last_end = 0
+    for match in delimiter_regex.finditer(clean_content):
+        block_str = clean_content[last_end:match.start()]
+        if block_str.strip():
+            raw_blocks.append((block_str, last_end, match.start()))
+        last_end = match.end()
+    
+    remaining = clean_content[last_end:]
+    if remaining.strip():
+        raw_blocks.append((remaining, last_end, len(clean_content)))
 
-    for block_idx, block in enumerate(blocks, start=1):
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if not lines:
+    cues: List[ParsedCue] = []
+    seen_indices = set()
+
+    for block_idx, (block, start_pos, end_pos) in enumerate(raw_blocks, start=1):
+        lines = block.splitlines(keepends=True)
+        stripped_lines = [l.strip() for l in lines if l.strip()]
+        if not stripped_lines:
             continue
         
-        if lines[0].isdigit():
-            idx = int(lines[0])
+        # Check ID line
+        if stripped_lines[0].isdigit():
+            idx = int(stripped_lines[0])
             time_line_idx = 1
-        elif "-->" in lines[0]:
+        elif "-->" in stripped_lines[0]:
             idx = block_idx
             time_line_idx = 0
         else:
-            raise ValueError(f"SRT block #{block_idx} has invalid format: '{lines[0]}'")
+            raise ValueError(f"SRT block #{block_idx} has invalid format: '{stripped_lines[0]}'")
         
-        if time_line_idx >= len(lines) or "-->" not in lines[time_line_idx]:
+        if idx in seen_indices:
+            raise ValueError(f"Duplicate cue index #{idx} found in SRT.")
+        seen_indices.add(idx)
+
+        if time_line_idx >= len(stripped_lines) or "-->" not in stripped_lines[time_line_idx]:
             raise ValueError(f"SRT block #{block_idx} missing valid '-->' timestamp line.")
         
-        start_sec, end_sec, start_str, end_str = timestamp_to_seconds_pair(lines[time_line_idx])
+        start_sec, end_sec, start_str, end_str = timestamp_to_seconds_pair(stripped_lines[time_line_idx])
         
-        text_lines = lines[time_line_idx + 1:]
-        text = "\n".join(text_lines)
+        # Header is lines up to time_line_idx inclusive
+        header_text = "".join(lines[:time_line_idx + 1])
+        text_lines_raw = lines[time_line_idx + 1:]
+        text = "".join(text_lines_raw).strip()
         
         cues.append(ParsedCue(
             index=idx,
@@ -97,7 +136,10 @@ def parse_srt(srt_content: str) -> List[ParsedCue]:
             start_seconds=start_sec,
             end_seconds=end_sec,
             text=text,
-            raw_block=block
+            raw_block=block,
+            raw_header=header_text,
+            start_char=start_pos,
+            end_char=end_pos
         ))
 
     if not cues:
@@ -105,23 +147,85 @@ def parse_srt(srt_content: str) -> List[ParsedCue]:
 
     return cues
 
-def export_srt(cues_with_revisions: List[Dict[str, Any]]) -> str:
+def export_srt_bytes(
+    raw_bytes: bytes,
+    cues: List[Any],
+    cue_revisions: Dict[int, str]
+) -> bytes:
     """
-    Build an SRT string from cue objects.
-    Preserves exact original block structure for unmodified cues.
-    Modifies text for cues with accepted revisions.
+    Build byte-exact SRT export.
+    If no cues were revised, returns raw_bytes directly (100% byte-for-byte match).
+    For revised cues, preserves the original header, line endings, and untouched block bytes.
     """
+    if not cue_revisions:
+        return raw_bytes
+
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raw_text = raw_bytes.decode("utf-8-sig")
+
+    line_ending = detect_line_ending(raw_text)
+
     blocks = []
+    for cue in sorted(cues, key=lambda c: getattr(c, "index", 0)):
+        idx = getattr(cue, "index", 0)
+        raw_block = getattr(cue, "raw_block", "")
+        raw_header = getattr(cue, "raw_header", "")
+        start_time = getattr(cue, "start_time", "")
+        end_time = getattr(cue, "end_time", "")
+        
+        if idx in cue_revisions:
+            new_text = cue_revisions[idx].strip()
+            if raw_header:
+                header = raw_header
+                if not header.endswith("\n"):
+                    header += line_ending
+                blocks.append(f"{header}{new_text}")
+            else:
+                blocks.append(f"{idx}{line_ending}{start_time} --> {end_time}{line_ending}{new_text}")
+        else:
+            if raw_block:
+                blocks.append(raw_block.strip("\r\n"))
+            else:
+                text = getattr(cue, "text", getattr(cue, "original_text", "")).strip()
+                blocks.append(f"{idx}{line_ending}{start_time} --> {end_time}{line_ending}{text}")
+
+    separator = f"{line_ending}{line_ending}"
+    exported_text = separator.join(blocks)
+    if not exported_text.endswith(line_ending):
+        exported_text += line_ending
+
+    return exported_text.encode("utf-8")
+
+def export_srt(cues_with_revisions: List[Dict[str, Any]]) -> str:
+    """Fallback string export preserving block structure."""
+    blocks = []
+    sample_text = "\n"
+    for cue in cues_with_revisions:
+        if cue.get("raw_block") and "\r\n" in cue["raw_block"]:
+            sample_text = "\r\n"
+            break
+    
+    line_ending = sample_text
+    
     for cue in sorted(cues_with_revisions, key=lambda c: c["index"]):
         idx = cue["index"]
         start = cue["start_time"]
         end = cue["end_time"]
         text = cue["text"].strip()
+        raw_block = cue.get("raw_block", "")
+        raw_header = cue.get("raw_header", "")
         
-        # If text is unchanged and original raw_block is present, use raw_block
-        if cue.get("is_modified", True) is False and cue.get("raw_block"):
-            blocks.append(cue["raw_block"].strip())
+        if cue.get("is_modified", True) is False and raw_block:
+            blocks.append(raw_block.strip("\r\n"))
+        elif raw_header:
+            header = raw_header
+            if not header.endswith("\n"):
+                header += line_ending
+            blocks.append(f"{header}{text}")
         else:
-            blocks.append(f"{idx}\n{start} --> {end}\n{text}")
+            blocks.append(f"{idx}{line_ending}{start} --> {end}{line_ending}{text}")
     
-    return "\n\n".join(blocks) + "\n"
+    separator = f"{line_ending}{line_ending}"
+    return separator.join(blocks) + line_ending

@@ -86,10 +86,35 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
 
         {/* Proposed Wording Editor */}
         <div style={{ background: 'var(--bg-secondary)', padding: '12px 14px', borderRadius: 'var(--radius-md)' }}>
+          {finding.needs_re_review && (
+            <div
+              role="alert"
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid #f59e0b',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: '10px',
+                fontSize: '0.85rem',
+                color: '#fbbf24',
+              }}
+            >
+              <strong>Re-review required:</strong> Latest analysis updated this proposal.
+              {finding.previous_accepted_text && (
+                <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Previously accepted wording: <em>"{finding.previous_accepted_text}"</em>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+            <label
+              htmlFor="proposal-textarea"
+              style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}
+            >
               PROPOSED ANONYMIZED WORDING
-            </span>
+            </label>
             {isDraftUnsaved && (
               <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>
                 &bull; Unsaved Draft Edits
@@ -98,6 +123,8 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
           </div>
 
           <textarea
+            id="proposal-textarea"
+            aria-label="Proposed wording editor"
             rows={3}
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}

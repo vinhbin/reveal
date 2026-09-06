@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
-import { Finding } from '../types';
+import { Finding, SeekRequest } from '../types';
 
 interface VideoPlayerProps {
   videoUrl: string;
   findings: Finding[];
   currentTime: number;
-  seekTargetTime: number | null;
+  seekRequest?: SeekRequest | null;
+  seekTargetTime?: number | null;
   onTimeUpdate: (time: number) => void;
   activeFinding: Finding | null;
   onSelectFinding: (finding: Finding) => void;
@@ -16,6 +17,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   findings,
   currentTime,
+  seekRequest,
   seekTargetTime,
   onTimeUpdate,
   activeFinding,
@@ -26,13 +28,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Directly seek the video element whenever seekTargetTime changes
+  // Directly seek the video element whenever seekRequest or seekTargetTime updates
   useEffect(() => {
-    if (videoRef.current && seekTargetTime !== null && !isNaN(seekTargetTime)) {
+    if (seekRequest && videoRef.current) {
+      videoRef.current.currentTime = seekRequest.time;
+      onTimeUpdate(seekRequest.time);
+    } else if (videoRef.current && seekTargetTime !== null && seekTargetTime !== undefined && !isNaN(seekTargetTime)) {
       videoRef.current.currentTime = seekTargetTime;
       onTimeUpdate(seekTargetTime);
     }
-  }, [seekTargetTime]);
+  }, [seekRequest, seekTargetTime, onTimeUpdate]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -71,6 +76,33 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
+  // Keyboard controls for J, L, Space
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'KeyJ') {
+        e.preventDefault();
+        if (videoRef.current) {
+          const target = Math.max(0, videoRef.current.currentTime - 5);
+          videoRef.current.currentTime = target;
+          onTimeUpdate(target);
+        }
+      } else if (e.code === 'KeyL') {
+        e.preventDefault();
+        if (videoRef.current) {
+          const target = Math.min(duration || 9999, videoRef.current.currentTime + 5);
+          videoRef.current.currentTime = target;
+          onTimeUpdate(target);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [duration, isPlaying, onTimeUpdate]);
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
     if (videoRef.current) {
@@ -106,6 +138,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           controls={false}
           playsInline
+          aria-label="Film Review Video Player"
         />
 
         {activeFinding && (
@@ -197,7 +230,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <button
               className="btn btn-secondary"
               onClick={() => {
-                if (videoRef.current) videoRef.current.currentTime = 0;
+                if (videoRef.current) {
+                  videoRef.current.currentTime = 0;
+                  onTimeUpdate(0);
+                }
               }}
               aria-label="Restart Video"
             >

@@ -71,7 +71,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
         </div>
       )}
 
-      <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px' }}>
+      <div className="grid-responsive">
         <form onSubmit={handleSubmit} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
             <label htmlFor="review-title-input" style={{ display: 'block', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)' }}>

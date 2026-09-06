@@ -8,6 +8,7 @@ interface AccessibleTextViewProps {
   findings: Finding[];
   onUpdateDecision: (findingId: string, status?: DecisionStatus, editedProposal?: string) => void;
   onExport: () => void;
+  onSeek?: (seconds: number) => void;
 }
 
 export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
@@ -16,6 +17,7 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
   findings,
   onUpdateDecision,
   onExport,
+  onSeek,
 }) => {
   const [editedProposals, setEditedProposals] = useState<Record<string, string>>({});
 
@@ -67,7 +69,29 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
               <tr key={cue.id} style={{ borderBottom: '1px solid #333' }}>
                 <td style={{ padding: '12px', fontWeight: 'bold' }}>#{cue.index}</td>
                 <td style={{ padding: '12px', fontFamily: 'monospace' }}>
-                  {cue.start_time} - {cue.end_time}
+                  <div>{cue.start_time} - {cue.end_time}</div>
+                  {onSeek && (
+                    <button
+                      type="button"
+                      aria-label={`Jump video to cue #${cue.index} at ${cue.start_time}`}
+                      onClick={() => onSeek(cue.start_seconds)}
+                      style={{
+                        marginTop: '4px',
+                        padding: '4px 8px',
+                        background: '#334155',
+                        color: '#f8fafc',
+                        border: '1px solid #64748b',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      &#9654; Play from here
+                    </button>
+                  )}
                 </td>
                 <td style={{ padding: '12px' }}>
                   <div><strong>Original Text:</strong> {cue.text}</div>

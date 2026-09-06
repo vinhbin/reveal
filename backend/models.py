@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import String, Integer, Float, Text, Enum as SQLEnum, ForeignKey, DateTime
+from sqlalchemy import String, Integer, Float, Text, Enum as SQLEnum, ForeignKey, DateTime, LargeBinary, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.database import Base
 
@@ -43,6 +43,8 @@ class Review(Base):
     video_path: Mapped[str] = mapped_column(String(512), nullable=False)
     srt_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     srt_content: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_srt_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
+    media_duration: Mapped[float] = mapped_column(Float, nullable=True, default=None)
     intent_notes: Mapped[str] = mapped_column(Text, nullable=True, default="")
     status: Mapped[ReviewStatus] = mapped_column(SQLEnum(ReviewStatus), default=ReviewStatus.PENDING)
     error_message: Mapped[str] = mapped_column(Text, nullable=True, default="")
@@ -64,6 +66,9 @@ class Cue(Base):
     start_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     end_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_block: Mapped[str] = mapped_column(Text, nullable=True, default="")
+    start_byte: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
+    end_byte: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
 
     review: Mapped["Review"] = relationship("Review", back_populates="cues")
     findings: Mapped[list["Finding"]] = relationship("Finding", back_populates="cue", cascade="all, delete-orphan")
@@ -79,6 +84,8 @@ class Finding(Base):
     issue_description: Mapped[str] = mapped_column(Text, nullable=False)
     proposed_text: Mapped[str] = mapped_column(Text, nullable=False)
     edited_proposal: Mapped[str] = mapped_column(Text, nullable=True, default="")
+    previous_accepted_text: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    needs_re_review: Mapped[bool] = mapped_column(Boolean, default=False)
     evidence_origin: Mapped[EvidenceOrigin] = mapped_column(SQLEnum(EvidenceOrigin), default=EvidenceOrigin.MODEL_INFERENCE)
     interval_start: Mapped[float] = mapped_column(Float, nullable=False)
     interval_end: Mapped[float] = mapped_column(Float, nullable=False)

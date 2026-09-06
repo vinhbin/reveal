@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Review, DecisionStatus } from '../types';
+import { Review, DecisionStatus, SeekRequest } from '../types';
 import { VideoPlayer } from './VideoPlayer';
 import { CueList } from './CueList';
 import { FindingInspector } from './FindingInspector';
@@ -25,7 +25,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
   isAnalyzing,
 }) => {
   const [currentTime, setCurrentTime] = useState(0);
-  const [seekTargetTime, setSeekTargetTime] = useState<number | null>(null);
+  const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
 
   // Always derive current finding directly from review.findings to avoid stale state
@@ -48,18 +48,6 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
   const selectedCue = selectedFinding
     ? review.cues.find((c) => c.id === selectedFinding.cue_id)
     : activeCue || review.cues[0];
-
-  if (isAccessibleView) {
-    return (
-      <AccessibleTextView
-        title={review.title}
-        cues={review.cues}
-        findings={review.findings}
-        onUpdateDecision={onUpdateDecision}
-        onExport={handleExport}
-      />
-    );
-  }
 
   const videoUrl = getVideoUrl(review.id);
   const acceptedCount = review.findings.filter((f) => f.status === 'accepted').length;
@@ -125,11 +113,13 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '16px',
         }}
       >
         <div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{review.title}</h2>
-          <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
             <span>Model: <strong>{review.model_used || 'reveal-heuristic-analyzer'}</strong></span>
             <span>Total Cues: <strong>{review.cues.length}</strong></span>
             <span>Findings: <strong>{review.findings.length}</strong></span>
@@ -138,7 +128,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing}>
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
             {isAnalyzing ? 'Analyzing...' : 'Re-run Analysis'}
@@ -163,51 +153,79 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Main Split Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 440px', gap: '20px', minHeight: '650px' }}>
+      {isAccessibleView ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <VideoPlayer
             videoUrl={videoUrl}
             findings={review.findings}
             currentTime={currentTime}
-            seekTargetTime={seekTargetTime}
+            seekRequest={seekRequest}
             onTimeUpdate={setCurrentTime}
             activeFinding={selectedFinding}
             onSelectFinding={(f) => {
               setSelectedFindingId(f.id);
-              setSeekTargetTime(f.interval_start);
+              setSeekRequest({ time: f.interval_start, nonce: Date.now() });
             }}
           />
-
-          {selectedFinding ? (
-            <FindingInspector
-              finding={selectedFinding}
-              originalCueText={selectedCue?.text || ''}
-              onUpdateDecision={onUpdateDecision}
-            />
-          ) : (
-            <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <CheckCircle2 className="w-8 h-8 text-emerald-400" style={{ margin: '0 auto 8px' }} />
-              <p>Select a cue or finding to inspect evidence details and proposed wording.</p>
-            </div>
-          )}
+          <AccessibleTextView
+            title={review.title}
+            cues={review.cues}
+            findings={review.findings}
+            onUpdateDecision={onUpdateDecision}
+            onExport={handleExport}
+            onSeek={(time) => {
+              setSeekRequest({ time, nonce: Date.now() });
+              setCurrentTime(time);
+            }}
+          />
         </div>
+      ) : (
+        /* Main Split Grid */
+        <div className="workspace-grid" style={{ minHeight: '650px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <VideoPlayer
+              videoUrl={videoUrl}
+              findings={review.findings}
+              currentTime={currentTime}
+              seekRequest={seekRequest}
+              onTimeUpdate={setCurrentTime}
+              activeFinding={selectedFinding}
+              onSelectFinding={(f) => {
+                setSelectedFindingId(f.id);
+                setSeekRequest({ time: f.interval_start, nonce: Date.now() });
+              }}
+            />
 
-        <CueList
-          cues={review.cues}
-          findings={review.findings}
-          selectedFindingId={selectedFindingId}
-          onSelectCue={(cue) => {
-            setSeekTargetTime(cue.start_seconds);
-            setCurrentTime(cue.start_seconds);
-          }}
-          onSelectFinding={(f) => {
-            setSelectedFindingId(f.id);
-            setSeekTargetTime(f.interval_start);
-          }}
-          currentTime={currentTime}
-        />
-      </div>
+            {selectedFinding ? (
+              <FindingInspector
+                finding={selectedFinding}
+                originalCueText={selectedCue?.text || ''}
+                onUpdateDecision={onUpdateDecision}
+              />
+            ) : (
+              <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <CheckCircle2 className="w-8 h-8 text-emerald-400" style={{ margin: '0 auto 8px' }} />
+                <p>Select a cue or finding to inspect evidence details and proposed wording.</p>
+              </div>
+            )}
+          </div>
+
+          <CueList
+            cues={review.cues}
+            findings={review.findings}
+            selectedFindingId={selectedFindingId}
+            onSelectCue={(cue) => {
+              setSeekRequest({ time: cue.start_seconds, nonce: Date.now() });
+              setCurrentTime(cue.start_seconds);
+            }}
+            onSelectFinding={(f) => {
+              setSelectedFindingId(f.id);
+              setSeekRequest({ time: f.interval_start, nonce: Date.now() });
+            }}
+            currentTime={currentTime}
+          />
+        </div>
+      )}
     </div>
   );
 };

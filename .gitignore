@@ -29,6 +29,7 @@ uploads/
 local-data/
 exports/
 *.mp4
+!backend/samples/sample_short.mp4
 *.mov
 *.mkv
 *.wav

@@ -26,6 +26,8 @@ class FindingSchema(BaseModel):
     issue_description: str
     proposed_text: str
     edited_proposal: Optional[str] = ""
+    previous_accepted_text: Optional[str] = None
+    needs_re_review: bool = False
     evidence_origin: EvidenceOrigin
     interval_start: float
     interval_end: float

@@ -126,11 +126,14 @@ export const CueList: React.FC<CueListProps> = ({
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', gap: '4px' }}>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {cueFindings.map((f) => (
-                    <span
+                    <button
+                      type="button"
                       key={f.id}
                       className={`badge badge-${f.status}`}
+                      aria-label={`Select finding #${f.cue_index} for ${f.candidate_name}, status ${f.status}`}
+                      style={{ cursor: 'pointer', border: '1px solid transparent' }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectCue(cue);
@@ -142,7 +145,7 @@ export const CueList: React.FC<CueListProps> = ({
                       {f.status === 'dismissed' && <XCircle className="w-3 h-3" />}
                       {f.status === 'intentional' && <HelpCircle className="w-3 h-3" />}
                       {f.candidate_name}: {f.status}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>

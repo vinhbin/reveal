@@ -22,7 +22,7 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
     <div className="reveal-landing">
       <a className="rl-skip" href="#landing-main">Skip to content</a>
       <header className="rl-nav rl-shell">
-        <a className="rl-wordmark" href="#" aria-label="Reveal home"><Eye aria-hidden="true" /> reveal<span className="rl-wordmark-dot">.</span></a>
+        <a className="rl-wordmark" href="#" aria-label="Reveal home"><span className="brand-icon"><Eye size={20} aria-hidden="true" /></span><span className="brand-title">REVEAL</span><span className="brand-subtitle">AD Reviewer</span></a>
         <nav aria-label="Main navigation">
           <a className="rl-how-link" href="#how-it-works">How it works</a>
           <a className="rl-nav-open" href="#/review">Open Reveal <ArrowRight size={16} aria-hidden="true" /></a>
@@ -46,29 +46,29 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
             <div className="rl-scene-top"><span><span className="rl-record-dot" /> The moment before the reveal</span><span>00:05</span></div>
             <svg viewBox="0 0 560 300" className="rl-scene-art" role="img" aria-label="Illustration of an unidentified visitor standing in a dim theater doorway">
               <defs>
-                <linearGradient id="rl-room" x2="0" y2="1"><stop stopColor="#1a3843" /><stop offset="1" stopColor="#0c1c29" /></linearGradient>
-                <linearGradient id="rl-door" x2="0" y2="1"><stop stopColor="#e3ce9b" /><stop offset="1" stopColor="#718a7d" /></linearGradient>
+                <linearGradient id="rl-room" x2="0" y2="1"><stop stopColor="#1c2640" /><stop offset="1" stopColor="#0b0f19" /></linearGradient>
+                <linearGradient id="rl-door" x2="0" y2="1"><stop stopColor="#e3ce9b" /><stop offset="1" stopColor="#64748b" /></linearGradient>
               </defs>
               <path fill="url(#rl-room)" d="M0 0h560v300H0z" />
-              <path fill="#233c47" d="M0 252 560 233v67H0z" />
-              <path fill="#344d53" d="M0 255 560 236v2L0 257z" />
-              <path fill="#0a1a23" d="M175 31h162v235H175z" />
-              <path fill="#66817d" d="M184 40h144v224H184z" />
+              <path fill="#243152" d="M0 252 560 233v67H0z" />
+              <path fill="#334155" d="M0 255 560 236v2L0 257z" />
+              <path fill="#0b0f19" d="M175 31h162v235H175z" />
+              <path fill="#64748b" d="M184 40h144v224H184z" />
               <path fill="url(#rl-door)" d="M192 46h128v218H192z" />
-              <path fill="#132a34" d="m192 46 84 26v187l-84 5z" />
-              <path fill="#778e85" d="m276 72 3 1v185l-3 1z" />
+              <path fill="#131b2e" d="m192 46 84 26v187l-84 5z" />
+              <path fill="#94a3b8" d="m276 72 3 1v185l-3 1z" />
               <circle cx="263" cy="169" r="3" fill="#dabf82" />
               <path fill="#a4a681" opacity=".12" d="m280 259 40-1 176 42H153z" />
-              <ellipse cx="311" cy="267" rx="36" ry="6" fill="#071720" opacity=".7" />
-              <path fill="#0a1a24" d="M293 151q-1-28 17-31 18 3 19 32l-3 21 16 68h-58l12-68z" />
-              <path fill="#0f2430" d="M304 145q10-11 18 0l-5 19h-10z" />
-              <path fill="#0a1a24" d="m291 237-3 30h17l6-27 5 27h17l-8-30z" />
-              <path fill="#29404b" d="m297 170-7 61 10-42z" />
-              <path fill="#243d47" d="M54 115h69v85H54zM402 89h82v111h-82z" />
-              <path stroke="#78968c" strokeWidth="1" fill="none" opacity=".5" d="M60 122h57v72H60zM409 96h68v97h-68z" />
-              <text x="443" y="133" textAnchor="middle" fill="#a2b5ae" fontSize="8" letterSpacing="3">THE LAST</text>
-              <text x="443" y="148" textAnchor="middle" fill="#a2b5ae" fontSize="8" letterSpacing="3">VISITOR</text>
-              <path stroke="#536d6e" d="M0 215h174M338 215h222" />
+              <ellipse cx="311" cy="267" rx="36" ry="6" fill="#0b0f19" opacity=".7" />
+              <path fill="#0b0f19" d="M293 151q-1-28 17-31 18 3 19 32l-3 21 16 68h-58l12-68z" />
+              <path fill="#131b2e" d="M304 145q10-11 18 0l-5 19h-10z" />
+              <path fill="#0b0f19" d="m291 237-3 30h17l6-27 5 27h17l-8-30z" />
+              <path fill="#243152" d="m297 170-7 61 10-42z" />
+              <path fill="#243152" d="M54 115h69v85H54zM402 89h82v111h-82z" />
+              <path stroke="#64748b" strokeWidth="1" fill="none" opacity=".5" d="M60 122h57v72H60zM409 96h68v97h-68z" />
+              <text x="443" y="133" textAnchor="middle" fill="#94a3b8" fontSize="8" letterSpacing="3">THE LAST</text>
+              <text x="443" y="148" textAnchor="middle" fill="#94a3b8" fontSize="8" letterSpacing="3">VISITOR</text>
+              <path stroke="#475569" d="M0 215h174M338 215h222" />
             </svg>
             <div className="rl-description-card">
               <div className="rl-description-label"><FileText size={13} aria-hidden="true" /> Audio-description draft <span>{revised ? 'Editor revision' : 'Possible spoiler'}</span></div>
@@ -82,7 +82,7 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
         </section>
 
         <section className="rl-timing rl-shell" aria-label="Why the timing matters">
-          <div className="rl-timing-intro"><span className="rl-eyebrow">One name. Two different moments.</span><p>Keep the reveal<br />where the story puts it.</p></div>
+          <div className="rl-timing-intro"><span className="rl-eyebrow">One name. Two different moments.</span><p>Keep the reveal<br /> where the story puts it.</p></div>
           <div className="rl-timeline">
             <div className="rl-timeline-track" aria-hidden="true"><span /><span /></div>
             <div className="rl-timeline-labels">
@@ -118,7 +118,7 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
 
         <section className="rl-closing rl-shell" aria-labelledby="closing-title"><p className="rl-eyebrow">The next reveal belongs to your audience</p><h2 id="closing-title">Give the story a second look.</h2><a className="rl-button rl-button-primary" href="#/review">Open Reveal <ArrowRight size={19} aria-hidden="true" /></a><p>A shared public demo. Bring non-confidential test material.</p></section>
       </main>
-      <footer className="rl-footer rl-shell"><a className="rl-wordmark" href="#" aria-label="Reveal home"><Eye aria-hidden="true" /> reveal<span className="rl-wordmark-dot">.</span></a><p>Same suspense. Shared discovery.</p><a href="https://github.com/vinhbin/reveal" target="_blank" rel="noreferrer">View source <ArrowRight size={14} aria-hidden="true" /></a></footer>
+      <footer className="rl-footer rl-shell"><a className="rl-wordmark" href="#" aria-label="Reveal home"><span className="brand-icon"><Eye size={20} aria-hidden="true" /></span><span className="brand-title">REVEAL</span><span className="brand-subtitle">AD Reviewer</span></a><p>Same suspense. Shared discovery.</p><a href="https://github.com/vinhbin/reveal" target="_blank" rel="noreferrer">View source <ArrowRight size={14} aria-hidden="true" /></a></footer>
     </div>
   );
 }

@@ -38,3 +38,38 @@ def test_migration_failure_prevents_startup_with_incomplete_schema(monkeypatch):
     monkeypatch.setattr("backend.database.inspect", fail_inspection)
     with pytest.raises(RuntimeError, match="database unavailable"):
         _auto_migrate_columns(MetaData(), Mock())
+
+
+def test_database_reconnects_after_idle_connection_is_closed(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{(tmp_path / 'disconnect.db').as_posix()}"}
+    probe = """
+import asyncio
+from sqlalchemy import text
+from backend.database import engine
+
+async def main():
+    try:
+        async with engine.connect() as connection:
+            raw = await connection.get_raw_connection()
+            driver = raw.driver_connection
+            assert (await connection.execute(text('SELECT 1'))).scalar() == 1
+        # Simulate the server closing an idle connection retained by the pool.
+        await driver.close()
+        async with engine.connect() as connection:
+            assert (await connection.execute(text('SELECT 1'))).scalar() == 1
+    finally:
+        await engine.dispose()
+
+asyncio.run(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe], env=env,
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr

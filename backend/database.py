@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from backend.config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+# Hosted PostgreSQL can close idle connections between requests.
+engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 from sqlalchemy import event, false, inspect, text

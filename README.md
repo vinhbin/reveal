@@ -10,10 +10,13 @@ Reveal helps audio-description editors catch possible identity spoilers before a
 | --- | --- |
 | Demo video | [Watch the 2:37 Reveal demo on YouTube](https://youtu.be/py-tZLzaG-U) |
 | Try the app | [Open the public Reveal demo](https://reveal--binepzai2004.replit.app/) |
+| Go directly to the editor | [Open the review workspace](https://reveal--binepzai2004.replit.app/#/review) |
 | Hackathon submission | Devpost link coming soon |
 | Run locally | [Quick start](#run-locally) |
 
 Current scope: a public editorial-review demo on Replit. On September 7, 2026, a fresh hosted Gemini 3.6 Flash analysis of the synthetic demo film completed with one finding. Saving custom wording, reloading the review, mobile editorial controls, and revised SRT export were verified on the published app.
+
+The landing page explains the problem with an interactive wording example, the review workflow, and the recorded demo. Select **Open Reveal** to enter the editor. Viewing the landing page does not start an analysis or use Gemini quota. Returning to it and reopening the editor in the same tab preserves the current draft and any request in progress; refreshing the page still clears unsaved work.
 
 ## The problem: a description can reveal too much
 

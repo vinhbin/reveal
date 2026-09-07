@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { UploadView } from './components/UploadView';
 import { ReviewWorkspace } from './components/ReviewWorkspace';
+import { LandingPage } from './components/LandingPage';
 import { Review, ReviewSummary, DecisionStatus } from './types';
 import {
   fetchReviews,
@@ -14,6 +15,35 @@ import {
 } from './api';
 
 export const App: React.FC = () => {
+  const [isEditor, setIsEditor] = useState(() => window.location.hash === '#/review');
+  const [hasOpenedEditor, setHasOpenedEditor] = useState(isEditor);
+  const hasNavigated = useRef(false);
+
+  useEffect(() => {
+    const handleNavigation = () => {
+      const nextIsEditor = window.location.hash === '#/review';
+      if (nextIsEditor !== isEditor) {
+        hasNavigated.current = true;
+        if (nextIsEditor) setHasOpenedEditor(true);
+        setIsEditor(nextIsEditor);
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener('hashchange', handleNavigation);
+    return () => window.removeEventListener('hashchange', handleNavigation);
+  }, [isEditor]);
+
+  return (
+    <>
+      {!isEditor && <LandingPage focusOnMount={hasNavigated.current} />}
+      <div hidden={!isEditor}>
+        {hasOpenedEditor && <EditorApp isActive={isEditor} />}
+      </div>
+    </>
+  );
+};
+
+const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [currentView, setCurrentView] = useState<'upload' | 'workspace'>('upload');
   const [currentReview, setCurrentReview] = useState<Review | null>(null);
   const [recentReviews, setRecentReviews] = useState<ReviewSummary[]>([]);
@@ -36,8 +66,9 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    mainRef.current?.focus();
-  }, [currentView, currentReview?.id]);
+    if (isActive) mainRef.current?.focus();
+    else mainRef.current?.querySelector('video')?.pause();
+  }, [isActive, currentView, currentReview?.id]);
 
   const loadRecentReviews = async () => {
     try {
@@ -166,6 +197,7 @@ export const App: React.FC = () => {
         }}
         onLoadSample={handleLoadSample}
         isBusy={isLoading}
+        onHome={() => { window.location.hash = ''; }}
       />
 
       <main className="main-content" ref={mainRef} tabIndex={-1}>

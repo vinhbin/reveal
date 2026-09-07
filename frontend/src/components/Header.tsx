@@ -9,6 +9,7 @@ interface HeaderProps {
   onNewReview: () => void;
   onLoadSample: () => void;
   isBusy: boolean;
+  onHome: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -19,10 +20,11 @@ export const Header: React.FC<HeaderProps> = ({
   onNewReview,
   onLoadSample,
   isBusy,
+  onHome,
 }) => {
   return (
     <header className="header" role="banner">
-      <button type="button" className="brand" onClick={onNewReview} disabled={isBusy} aria-label="Reveal home" style={{ cursor: 'pointer', background: 'none', border: 0, font: 'inherit' }}>
+      <button type="button" className="brand" onClick={onHome} disabled={isBusy} aria-label="Reveal home" style={{ cursor: 'pointer', background: 'none', border: 0, font: 'inherit' }}>
         <div className="brand-icon">
           <Eye className="w-5 h-5 text-white" />
         </div>

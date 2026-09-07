@@ -82,6 +82,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Keyboard controls for J, L, K, Space
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (videoRef.current?.closest('[hidden]')) return;
       const target = e.target as HTMLElement;
       const isInteractive =
         ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A', 'SUMMARY'].includes(target?.tagName) ||

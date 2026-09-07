@@ -13,7 +13,7 @@ Reveal helps audio-description editors catch possible identity spoilers before a
 | Hackathon submission | Devpost link coming soon |
 | Run locally | [Quick start](#run-locally) |
 
-Current scope: a public editorial-review demo on Replit. Hosted page loading, API access, upload, video range requests, and unchanged SRT export have been verified. The latest inspected hosted analyses failed with Gemini quota exhaustion; successful fresh inference on the hosted deployment is still pending.
+Current scope: a public editorial-review demo on Replit. On September 7, 2026, a fresh hosted Gemini 3.6 Flash analysis of the synthetic demo film completed with one finding. Saving custom wording, reloading the review, mobile editorial controls, and revised SRT export were verified on the published app.
 
 ## The problem: a description can reveal too much
 
@@ -109,7 +109,7 @@ flowchart TD
 
 The backend calls `client.files.upload`, polls `client.files.get`, and invokes `client.models.generate_content` with a JSON response configuration. Synchronous SDK work runs in a worker thread. Non-finite and invalid evidence intervals are rejected; media duration comes from `ffprobe` when available.
 
-The configurable default model is `gemini-2.5-flash`. The saved analysis used in the recorded demo reports `google-genai/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
+The code defaults to `gemini-2.5-flash`; the hosted demo sets `REVEAL_MODEL=gemini-3.6-flash` in Replit Secrets. Both the saved analysis shown in the recorded demo and the September 7 fresh hosted test report `google-genai/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
 
 The verified live path uses the **Gemini Developer API** and an API key. Google Cloud hosting, Vertex AI, and Agent Builder deployment are not demonstrated by this implementation. A Cloud project environment variable alone does not establish those integrations.
 
@@ -173,7 +173,7 @@ For live mode, edit the local `.env`:
 
 ```dotenv
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-REVEAL_MODEL=gemini-2.5-flash
+REVEAL_MODEL=gemini-3.6-flash
 ```
 
 Keep the real key in `.env` or a hosting secret, never in frontend code or a commit. `GOOGLE_API_KEY` is an accepted alternative. `DATABASE_URL` is optional and defaults to local SQLite. Leave `GOOGLE_CLOUD_PROJECT` empty for the documented API-key setup.
@@ -235,7 +235,11 @@ From `frontend`:
 npm run build
 ```
 
-On September 7, 2026, all **35 backend tests passed**, and the production frontend built successfully with Vite 6.4.3. Sixteen local production-browser checks passed, covering failure states, duplicate-request prevention, mobile access to decisions, saving, reloading, seeking, and export. npm audit reported zero advisories at that check. The backend suite uses mocked model calls and covers sample workflows, concurrency, editorial preservation, SRT formatting, legacy database serialization, and merge regressions. These tests do not establish model accuracy or current provider availability.
+On September 7, 2026, all **36 backend tests passed**, including a regression for reconnecting closed idle database connections. The disconnect fix also passed an isolated PostgreSQL 16 probe. The production frontend built successfully with Vite 6.4.3, and npm audit reported zero advisories at that check. Sixteen local production-browser checks passed. The backend suite uses mocked model calls; these are engineering checks, not model-accuracy measurements.
+
+Hosted verification separately confirmed a **fresh Gemini 3.6 Flash analysis** of the synthetic film, returning one finding. Six editorial API checks and seven browser checks then passed, covering decisions, custom wording, persistence after reload, mobile controls, and export. An earlier hosted pass verified upload validation, video range requests, exact-byte unchanged export, concurrency protection, sample creation, deletion, and 12 browser checks. Test-created reviews were removed after verification; existing visitor reviews were not modified.
+
+Earlier hosted calls encountered quota exhaustion and temporary provider unavailability. One HTTP test connection also disconnected after the successful inference; subsequent requests over a fresh connection and the browser passed. A successful test does not guarantee ongoing provider or network availability.
 
 The 2:37 demo was separately checked for decoding, playback, captions, and scene timing. Its successful recorded Gemini response demonstrates one synthetic example, not a benchmark across films.
 
@@ -285,7 +289,7 @@ All review routes use `/api/reviews` as their prefix. The running API's `/docs` 
 
 ## Hackathon status
 
-Prepared for **Agentic Cinema: The Blockbuster Hackathon**, with Replit as the intended track. The review workflow and real Gemini integration are implemented. Replit Agent configured startup, proxying, dependencies, and PostgreSQL compatibility, and the application is published on Replit. Hosted Gemini quota and final Devpost submission remain outstanding. This README describes product status and does not certify competition eligibility. See the [official event rules](https://agentic-cinema.devpost.com/rules).
+Prepared for **Agentic Cinema: The Blockbuster Hackathon**, with Replit as the intended track. Replit Agent configured startup, proxying, dependencies, and PostgreSQL compatibility. The application is published on Replit, and a fresh hosted Gemini analysis plus the editorial export workflow have been verified. The source repository is public. Final Devpost submission and its link remain outstanding. This README describes product status and does not certify competition eligibility. See the [official event rules](https://agentic-cinema.devpost.com/rules).
 
 ## License
 

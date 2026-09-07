@@ -39,10 +39,14 @@ async def test_recorded_example_is_immutable_editable_copy_without_model_call(mo
         finding = review["findings"][0]
         for key, value in snapshot["findings"][0].items():
             assert finding[key] == value
-        assert (await client.get(f"/api/reviews/{review['id']}/export")).content == (SAMPLES_DIR / "sample_ad.srt").read_bytes()
+        original = await client.get(f"/api/reviews/{review['id']}/export")
+        assert original.content == (SAMPLES_DIR / "sample_ad.srt").read_bytes()
+        assert original.headers["content-disposition"] == 'attachment; filename="sample_ad-original.srt"'
         edited = await client.patch(f"/api/reviews/{review['id']}/findings/{finding['id']}", json={"status": "accepted"})
         assert edited.status_code == 200
-        assert b"A hooded figure" in (await client.get(f"/api/reviews/{review['id']}/export")).content
+        revised = await client.get(f"/api/reviews/{review['id']}/export")
+        assert b"A hooded figure" in revised.content
+        assert revised.headers["content-disposition"] == 'attachment; filename="sample_ad-revised.srt"'
         second = (await client.post("/api/reviews/example")).json()
         assert second["id"] != review["id"]
         assert second["findings"][0]["status"] == "unreviewed"

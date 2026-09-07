@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Eye, FileText, Film, Play, Sparkles } from 'lucide-react';
 import './LandingPage.css';
 
-const DEMO_URL = 'https://youtu.be/py-tZLzaG-U';
+const DEMO_URL = 'https://youtu.be/3x5V9lDEQvI';
 
 export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }) {
   const [revised, setRevised] = useState(false);
@@ -37,7 +37,7 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
             <p className="rl-hero-description">A name can give away the story. Catch identity spoilers in audio-description scripts <strong>before narration is recorded.</strong></p>
             <div className="rl-actions">
               <a className="rl-button rl-button-primary" href="#/review">Open Reveal <ArrowRight size={19} aria-hidden="true" /></a>
-              <a className="rl-button rl-button-quiet" href={DEMO_URL} target="_blank" rel="noreferrer"><Play size={16} aria-hidden="true" /> Watch the demo <span className="rl-runtime">2:19</span></a>
+              <a className="rl-button rl-button-quiet" href={DEMO_URL} target="_blank" rel="noreferrer"><Play size={16} aria-hidden="true" /> Watch the demo <span className="rl-runtime">2:41</span></a>
             </div>
             <p className="rl-hero-note"><Sparkles size={14} aria-hidden="true" /> Gemini assists. The editor decides.</p>
           </div>
@@ -110,8 +110,8 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
           <h2 id="faq-title">Before you bring a scene.</h2>
           <div>
             <details><summary>Does my clip need captions?</summary><p>No. Upload the movie clip and a separate audio-description draft. Dialogue captions convey speech and sounds; audio description conveys visual details. Reveal currently reviews an existing description draft.</p></details>
-            <details><summary>What does Gemini actually do?</summary><p>Reveal sends the clip, timed cues, and any filmmaker notes to the Gemini API through Google’s Gen AI SDK. It returns possible identity disclosures and suggested wording. Findings need human review; they aren’t a verdict.</p></details>
-            <details><summary>Can I try it if Gemini is busy?</summary><p>You can watch the demo above to explore a recorded, successful Gemini result. New analyses require available Gemini quota and capacity. A failed analysis is shown explicitly.</p></details>
+            <details><summary>What does Gemini actually do?</summary><p>Reveal’s Google ADK review agent compares the clip, timed cues, and filmmaker notes using Gemini on Google Cloud Agent Platform. It returns possible identity disclosures and suggested wording. Findings need human review; they aren’t a verdict.</p></details>
+            <details><summary>Can I try it if Gemini is busy?</summary><p>Yes. Open Reveal and choose “Open saved Gemini example” to play the sample, review a recorded result, edit wording, and export without a new model call. Fresh analyses require available Gemini quota and capacity. A failed analysis is shown explicitly.</p></details>
             <details><summary>Is this a private workspace?</summary><p>This release is a shared public demo. Other visitors can access and change reviews. Use sample or non-confidential material; separate accounts and durable media storage are planned.</p></details>
           </div>
         </section>

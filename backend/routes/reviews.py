@@ -696,7 +696,9 @@ async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
 
     raw_bytes = review.raw_srt_bytes or review.srt_content.encode("utf-8")
     exported_bytes = export_srt_bytes(raw_bytes, review.cues, cue_revisions)
-    filename = f"edited_{review.srt_filename}"
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(review.srt_filename).stem).strip(".-")[:100] or "reveal"
+    variant = "original" if exported_bytes == raw_bytes else "revised"
+    filename = f"{stem}-{variant}.srt"
 
     return Response(
         content=exported_bytes,

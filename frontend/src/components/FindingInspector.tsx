@@ -37,8 +37,8 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
   };
 
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div className="card finding-inspector" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="finding-inspector-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <AlertTriangle className="w-5 h-5 text-amber-400" />
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
@@ -46,7 +46,7 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
           </h3>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="finding-inspector-badges" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <span className={`badge badge-${finding.status}`}>{finding.status}</span>
           <span className="badge" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
             {finding.evidence_origin.replace('_', ' ')}
@@ -75,7 +75,7 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
       </div>
 
       {/* Comparison Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div className="finding-comparison" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         {/* Original Cue Text */}
         <div style={{ background: 'var(--bg-secondary)', padding: '12px 14px', borderRadius: 'var(--radius-md)' }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
@@ -108,7 +108,7 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
             <label
               htmlFor="proposal-textarea"
               style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}
@@ -143,8 +143,8 @@ export const FindingInspector: React.FC<FindingInspectorProps> = ({
       </div>
 
       {/* Decision Actions Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', paddingTop: '8px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <button className="btn btn-accept" onClick={handleAccept}>
             <Check className="w-4 h-4" />
             Accept Revision

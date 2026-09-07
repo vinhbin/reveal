@@ -128,6 +128,7 @@ test('missing video shows an actionable message and original export has an hones
   await openExample(page);
   await expect(page.getByText(/Video unavailable/i)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export original SRT', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Re-run Analysis', exact: true })).toBeDisabled();
 });
 
 test('a missing source video is not misreported as Gemini unavailability', async ({ page }) => {
@@ -135,6 +136,30 @@ test('a missing source video is not misreported as Gemini unavailability', async
   await openExample(page);
   await expect(page.getByRole('alert').filter({ hasText: 'Analysis failed' })).toContainText('The video for this review is missing.');
   await expect(page.getByText('Gemini is temporarily unavailable.', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry Analysis', exact: true })).toBeDisabled();
+});
+
+test('mobile inspector stacks comparison fields and keeps header badges separate', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockApi(page);
+  await openExample(page);
+  const comparison = page.locator('.finding-comparison');
+  const columns = comparison.locator(':scope > div');
+  const original = await columns.nth(0).boundingBox();
+  const proposal = await columns.nth(1).boundingBox();
+  expect(proposal!.y).toBeGreaterThanOrEqual(original!.y + original!.height);
+  expect((await page.getByRole('textbox', { name: 'Proposed wording editor' }).boundingBox())!.width).toBeGreaterThan(250);
+  const title = await page.locator('.finding-inspector-header h3').boundingBox();
+  const badge = await page.locator('.finding-inspector-header .badge').first().boundingBox();
+  expect(badge!.y).toBeGreaterThanOrEqual(title!.y + title!.height);
+});
+
+test('landing demo links use the published Agent Platform video', async ({ page }) => {
+  await page.goto('/');
+  const demo = page.getByRole('link', { name: /Watch the demo/ });
+  await expect(demo).toHaveAttribute('href', 'https://youtu.be/3x5V9lDEQvI');
+  await expect(demo).toContainText('2:41');
+  await expect(page.locator('a[href*="py-tZLzaG-U"]')).toHaveCount(0);
 });
 
 test('editor skip link preserves the editor route and home preserves a draft', async ({ page }) => {

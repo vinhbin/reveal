@@ -11,6 +11,7 @@ interface VideoPlayerProps {
   onTimeUpdate: (time: number) => void;
   activeFinding: Finding | null;
   onSelectFinding: (finding: Finding) => void;
+  onMediaAvailabilityChange?: (available: boolean) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -22,6 +23,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onTimeUpdate,
   activeFinding,
   onSelectFinding,
+  onMediaAvailabilityChange,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -160,8 +162,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           src={videoUrl}
-          onError={() => { setMediaError(true); setIsPlaying(false); }}
-          onLoadedMetadata={() => setMediaError(false)}
+          onError={() => { setMediaError(true); setIsPlaying(false); onMediaAvailabilityChange?.(false); }}
+          onLoadedMetadata={() => { setMediaError(false); onMediaAvailabilityChange?.(true); }}
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           controls={false}
           playsInline

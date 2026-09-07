@@ -28,6 +28,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [unavailableVideoUrl, setUnavailableVideoUrl] = useState<string | null>(null);
 
   // Always derive current finding directly from review.findings to avoid stale state
   const selectedFinding = review.findings.find((f) => f.id === selectedFindingId) || review.findings[0] || null;
@@ -51,6 +52,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
     : activeCue || review.cues[0];
 
   const videoUrl = getVideoUrl(review.id);
+  const mediaUnavailable = unavailableVideoUrl === videoUrl;
   const acceptedCount = review.findings.filter((f) => f.status === 'accepted').length;
   const unreviewedCount = review.findings.filter((f) => f.status === 'unreviewed').length;
   const hasAcceptedEdits = review.findings.some((finding) =>
@@ -117,7 +119,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
             </div>
           </div>
 
-          <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing}>
+          <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing || mediaUnavailable} aria-describedby={mediaUnavailable ? 'analysis-media-needed' : undefined}>
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
             Retry Analysis
           </button>
@@ -148,7 +150,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         </div>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {review.status !== 'failed' && <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing || review.status === 'analyzing'}>
+          {review.status !== 'failed' && <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing || review.status === 'analyzing' || mediaUnavailable} aria-describedby={mediaUnavailable ? 'analysis-media-needed' : undefined}>
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
             {isAnalyzing ? 'Analyzing...' : 'Re-run Analysis'}
           </button>}
@@ -173,10 +175,13 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         </div>
       </div>
 
+      {mediaUnavailable && <p id="analysis-media-needed" role="status" className="public-demo-notice">Analysis needs a playable clip. Refresh to retry loading the video, or start a new review with the original clip. You can also open the saved Gemini example.</p>}
+
       {isAccessibleView ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <VideoPlayer
             videoUrl={videoUrl}
+            onMediaAvailabilityChange={(available) => setUnavailableVideoUrl(available ? null : videoUrl)}
             findings={review.findings}
             currentTime={currentTime}
             seekRequest={seekRequest}
@@ -207,6 +212,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <VideoPlayer
               videoUrl={videoUrl}
+              onMediaAvailabilityChange={(available) => setUnavailableVideoUrl(available ? null : videoUrl)}
               findings={review.findings}
               currentTime={currentTime}
               seekRequest={seekRequest}
@@ -231,7 +237,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
                   : <AlertTriangle className="w-8 h-8" style={{ margin: '0 auto 8px' }} />}
                 <p>{review.model_used
                   ? 'The last completed analysis returned no findings. You can still review the script and video.'
-                  : 'No completed analysis yet. Run analysis to review possible identity disclosures.'}</p>
+                  : mediaUnavailable ? 'No completed analysis yet. Restore the video before starting analysis.' : 'No completed analysis yet. Run analysis to review possible identity disclosures.'}</p>
               </div>
             )}
           </div>

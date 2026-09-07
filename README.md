@@ -114,7 +114,7 @@ The backend calls `client.files.upload`, polls `client.files.get`, and invokes `
 
 The code defaults to `gemini-2.5-flash`; the hosted demo sets `REVEAL_MODEL=gemini-3.6-flash` in Replit Secrets. Both the saved analysis shown in the recorded demo and the September 7 fresh hosted test report `google-genai/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
 
-The earlier verified hosted path uses the **Gemini Developer API** and an API key. The new **Google ADK + Agent Platform** path is implemented separately and requires the Cloud configuration below before deployment. A Cloud project environment variable alone does not switch an existing API-key deployment; select `REVEAL_PROVIDER=agent_platform` and verify its recorded provider after publishing.
+The earlier verified hosted path uses the **Gemini Developer API** and an API key. The new **Google ADK + Agent Platform** path is now deployed and verified on Replit using the Cloud configuration below. A Cloud project environment variable alone does not switch an existing API-key deployment; select `REVEAL_PROVIDER=agent_platform` and verify its recorded provider after publishing.
 
 ### Live analysis and offline sample mode
 
@@ -328,4 +328,11 @@ To verify deployment, create a sample review and confirm it completes with a `go
 References: [Google ADK on Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/adk), [ADK Google Cloud authentication](https://adk.dev/get-started/google-cloud/).
 
 
-Agent Platform verification on September 7 succeeded using the dedicated service account in `cinema-hack-421000`: a fresh synthetic Mara analysis returned one finding and recorded `google-adk/agent-platform/gemini-3.6-flash`. Accepting custom wording and exporting the SRT passed; the temporary Cloud Storage bucket contained zero objects afterward. This test exercised the actual FastAPI endpoints locally with real Google Cloud services. The Replit website still requires the new secrets and a republish before it uses this path. The first attempt correctly failed while Google provisioned its service agent; a later attempt succeeded after provisioning.
+Agent Platform verification on September 7 succeeded using the dedicated service account in `cinema-hack-421000`: a fresh synthetic Mara analysis returned one finding and recorded `google-adk/agent-platform/gemini-3.6-flash`. Accepting custom wording and exporting the SRT passed; the temporary Cloud Storage bucket contained zero objects afterward. This test exercised the actual FastAPI endpoints locally with real Google Cloud services. The Replit website was subsequently published as commit `312729e` and independently verified: a fresh hosted ADK analysis returned one finding, the 72-second video played in Chromium, and accepted wording exported correctly with no JavaScript errors. Older review uploads can still be missing after redeployment; this successful fresh review does not establish durable source-media storage. The first attempt correctly failed while Google provisioned its service agent; a later attempt succeeded after provisioning.
+
+
+### Built with Replit Agent and hosted on Replit
+
+Replit Agent configured the imported workspace's development workflow, Vite host/port settings, PostgreSQL/asyncpg compatibility and deployment dependencies. The repository preserves this work in [Agent setup commit 9e29ce1](https://github.com/vinhbin/reveal/commit/9e29ce1). The finished frontend and FastAPI backend run together on the [published Replit app](https://reveal--binepzai2004.replit.app/), using the production build/run commands in `.replit`. Replit deployment commits record subsequent published builds.
+
+This describes Replit's actual contribution. Initial application development used Gemini in Antigravity; later development and verification also involved Codex as disclosed above. The development-tool eligibility question is separate from Replit deployment evidence.

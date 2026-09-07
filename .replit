@@ -6,6 +6,24 @@ packages = ["libxcrypt", "postgresql"]
 
 [deployment]
 deploymentTarget = "cloudrun"
+build = [
+  "sh",
+  "-c",
+  "uv sync --locked && npm --prefix frontend ci --include=dev && npm --prefix frontend run build",
+]
+run = [
+  "uv",
+  "run",
+  "--no-sync",
+  "python",
+  "-m",
+  "uvicorn",
+  "backend.production:app",
+  "--host",
+  "0.0.0.0",
+  "--port",
+  "5000",
+]
 
 [workflows]
 runButton = "Project"

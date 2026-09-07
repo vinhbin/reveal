@@ -192,29 +192,8 @@ async def create_sample_review(db: AsyncSession = Depends(get_db)):
     sample_video_path = SAMPLES_DIR / "sample_short.mp4"
     sample_srt_path = SAMPLES_DIR / "sample_ad.srt"
 
-    if not sample_srt_path.exists():
-        sample_srt_content = """1
-00:00:02,000 --> 00:00:06,000
-In a shadowed alleyway, Detective Vance watches a flickering streetlight.
-
-2
-00:00:08,500 --> 00:00:13,000
-Detective Vance adjusts his collar as rainfall slicks the cobblestones.
-
-3
-00:00:15,000 --> 00:00:19,500
-Dr. Aris Thorne approaches from the mist carrying a steel briefcase.
-
-4
-00:00:22,000 --> 00:00:27,000
-The stranger extends a gloved hand and hands over a keycard.
-
-5
-00:00:30,000 --> 00:00:35,000
-A badge pinned to his coat shines: Detective Vance, Precinct 4.
-"""
-        with open(sample_srt_path, "w", encoding="utf-8") as f:
-            f.write(sample_srt_content)
+    if not sample_srt_path.is_file() or not sample_video_path.is_file():
+        raise HTTPException(status_code=503, detail="The bundled sample assets are unavailable. Please upload a clip and matching script.")
 
     with open(sample_srt_path, "rb") as f:
         srt_bytes = f.read()
@@ -225,11 +204,15 @@ A badge pinned to his coat shines: Detective Vance, Precinct 4.
 
     parsed_cues = parse_srt(srt_content)
     media_duration = get_media_duration(saved_video_path) or 72.0
-    intent_notes = "The identity of Dr. Aris Thorne is intended to remain concealed until the unmasking climax. Cue #3 prematurely names Dr. Aris Thorne."
+    intent_notes = (
+        "Synthetic test scene: Mara's identity is intended to remain concealed until "
+        "her staff badge is shown at 00:01:06 (66 seconds). The cue at 00:00:05 "
+        "names her before that reveal. Naming her at or after 66 seconds is intentional."
+    )
 
     review = Review(
         id=review_id,
-        title="Sample Short — The Alleyway Encounter",
+        title="Sample Short — Synthetic Mara Reveal",
         video_filename="sample_short.mp4",
         video_path=saved_video_path,
         srt_filename="sample_ad.srt",

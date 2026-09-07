@@ -1,19 +1,12 @@
-1
-00:00:02,000 --> 00:00:06,000
-In a shadowed alleyway, Detective Vance watches a flickering streetlight.
+001
+00:00:05,000  -->  00:00:09,000
+Mara waits in the theater lobby.
 
-2
-00:00:08,500 --> 00:00:13,000
-Detective Vance adjusts his collar as rainfall slicks the cobblestones.
+002
+00:00:26,000 --> 00:00:30,000
+The visitor approaches the counter.
 
-3
-00:00:15,000 --> 00:00:19,500
-Dr. Aris Thorne approaches from the mist carrying a steel briefcase.
+003
+00:01:06,000 --> 00:01:10,000
+Mara lowers her hood.
 
-4
-00:00:22,000 --> 00:00:27,000
-The stranger extends a gloved hand and hands over a keycard.
-
-5
-00:00:30,000 --> 00:00:35,000
-A badge pinned to his coat shines: Detective Vance, Precinct 4.

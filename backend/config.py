@@ -28,6 +28,10 @@ SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Google Gen AI / Cloud settings
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
 REVEAL_MODEL = os.getenv("REVEAL_MODEL", "gemini-2.5-flash")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+REVEAL_PROVIDER = os.getenv("REVEAL_PROVIDER", "auto").strip().lower()
+REVEAL_GCS_BUCKET = os.getenv("REVEAL_GCS_BUCKET", "")
+# Optional Replit secret. Never persist credentials in the repository or logs.
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")

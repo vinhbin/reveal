@@ -110,6 +110,7 @@ async def test_interrupted_analysis_is_retryable(monkeypatch, interruption):
 @pytest.mark.parametrize("provider_fails", [False, True])
 async def test_provider_requests_bounded_and_file_cleaned(monkeypatch, tmp_path, provider_fails):
     from google import genai
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"test video")
     upload = SimpleNamespace(name="files/mock", state=SimpleNamespace(name="ACTIVE"))
@@ -130,6 +131,7 @@ async def test_provider_requests_bounded_and_file_cleaned(monkeypatch, tmp_path,
         findings, _ = await analyzer._run_gemini_analysis_threaded(str(video), [])
         assert findings == []
     options = constructor.call_args.kwargs["http_options"]
+    assert constructor.call_args.kwargs["enterprise"] is False
     assert 0 < options.timeout <= 60000
     assert options.retry_options.attempts == 1
     fake.files.delete.assert_called_once_with(name="files/mock")

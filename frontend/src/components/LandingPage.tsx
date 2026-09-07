@@ -37,7 +37,7 @@ export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }
             <p className="rl-hero-description">A name can give away the story. Catch identity spoilers in audio-description scripts <strong>before narration is recorded.</strong></p>
             <div className="rl-actions">
               <a className="rl-button rl-button-primary" href="#/review">Open Reveal <ArrowRight size={19} aria-hidden="true" /></a>
-              <a className="rl-button rl-button-quiet" href={DEMO_URL} target="_blank" rel="noreferrer"><Play size={16} aria-hidden="true" /> Watch the demo <span className="rl-runtime">2:37</span></a>
+              <a className="rl-button rl-button-quiet" href={DEMO_URL} target="_blank" rel="noreferrer"><Play size={16} aria-hidden="true" /> Watch the demo <span className="rl-runtime">2:19</span></a>
             </div>
             <p className="rl-hero-note"><Sparkles size={14} aria-hidden="true" /> Gemini assists. The editor decides.</p>
           </div>

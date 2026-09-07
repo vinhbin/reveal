@@ -8,7 +8,7 @@ Reveal helps audio-description editors catch possible identity spoilers before a
 
 | Explore Reveal | Status |
 | --- | --- |
-| Demo video | [Watch the 2:37 Reveal demo on YouTube](https://youtu.be/py-tZLzaG-U) |
+| Demo video | [Watch the Reveal demo on YouTube](https://youtu.be/py-tZLzaG-U) |
 | Try the app | [Open the public Reveal demo](https://reveal--binepzai2004.replit.app/) |
 | Go directly to the editor | [Open the review workspace](https://reveal--binepzai2004.replit.app/#/review) |
 | Hackathon submission | Devpost link coming soon |
@@ -73,7 +73,7 @@ The walkthrough uses a **synthetic test film**, not a commercial film or a custo
 
 The demo opens a saved result from a successful Gemini API analysis and shows the real review, seeking, editing, and export workflow. It does not show a fresh inference completing during the recording. Later recording attempts encountered provider errors, so the successful result was retained and labeled **Recorded Gemini result / Synthetic clip**.
 
-The bundled local sample is a separate workflow fixture involving Detective Vance and Dr. Aris Thorne. It is not the Mara film shown in the demo.
+The bundled sample is the original synthetic Mara film and its matching three-cue AD script. The script names Mara at five seconds; the film reveals her badge at 66 seconds. The scene is a controlled demonstration, not a benchmark on commercial films.
 
 ## Implemented features
 
@@ -114,14 +114,15 @@ The backend calls `client.files.upload`, polls `client.files.get`, and invokes `
 
 The code defaults to `gemini-2.5-flash`; the hosted demo sets `REVEAL_MODEL=gemini-3.6-flash` in Replit Secrets. Both the saved analysis shown in the recorded demo and the September 7 fresh hosted test report `google-genai/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
 
-The verified live path uses the **Gemini Developer API** and an API key. Google Cloud hosting, Vertex AI, and Agent Builder deployment are not demonstrated by this implementation. A Cloud project environment variable alone does not establish those integrations.
+The earlier verified hosted path uses the **Gemini Developer API** and an API key. The new **Google ADK + Agent Platform** path is implemented separately and requires the Cloud configuration below before deployment. A Cloud project environment variable alone does not switch an existing API-key deployment; select `REVEAL_PROVIDER=agent_platform` and verify its recorded provider after publishing.
 
 ### Live analysis and offline sample mode
 
 | Mode | Configuration | Meaning of results |
 | --- | --- | --- |
 | Live Gemini | Set `GEMINI_API_KEY` or `GOOGLE_API_KEY`, with access to the selected model. | Gemini receives the video and script. Check `model_used` and review status. |
-| Offline heuristic | Leave both API-key variables and `GOOGLE_CLOUD_PROJECT` empty. | Text rules generate sample findings. They do not inspect the film or verify reveal times. |
+| Agent Platform | Set `REVEAL_PROVIDER=agent_platform`, Cloud project, private bucket and credentials as documented below. | ADK runs the review against Gemini on Google Cloud; successful reviews record `google-adk/agent-platform/?`. |
+| Offline heuristic | In default `auto` mode, leave both API-key variables and `GOOGLE_CLOUD_PROJECT` empty. | Text rules generate sample findings. They do not inspect the film or verify reveal times. |
 
 Offline findings contain a demo-rule label and synthetic intervals. Use this mode to explore the interface, not to assess a film's narrative. Live requests can incur API charges and send the clip, script, and notes to Google; use material you are authorized to process.
 
@@ -238,13 +239,13 @@ From `frontend`:
 npm run build
 ```
 
-On September 7, 2026, all **36 backend tests passed**, including a regression for reconnecting closed idle database connections. The disconnect fix also passed an isolated PostgreSQL 16 probe. The production frontend built successfully with Vite 6.4.3, and npm audit reported zero advisories at that check. Sixteen local production-browser checks passed. The backend suite uses mocked model calls; these are engineering checks, not model-accuracy measurements.
+On September 7, 2026, all **59 backend tests passed**, including a regression for reconnecting closed idle database connections. The disconnect fix also passed an isolated PostgreSQL 16 probe. The production frontend built successfully with Vite 6.4.3, and npm audit reported zero advisories at that check. Sixteen local production-browser checks passed. The suite also exercises the real ADK Runner and Gen AI SDK with intercepted HTTP, validating the Cloud request and response schema without network access. The backend suite uses mocked model calls; these are engineering checks, not model-accuracy measurements.
 
 Hosted verification separately confirmed a **fresh Gemini 3.6 Flash analysis** of the synthetic film, returning one finding. Six editorial API checks and seven browser checks then passed, covering decisions, custom wording, persistence after reload, mobile controls, and export. An earlier hosted pass verified upload validation, video range requests, exact-byte unchanged export, concurrency protection, sample creation, deletion, and 12 browser checks. Test-created reviews were removed after verification; existing visitor reviews were not modified.
 
 Earlier hosted calls encountered quota exhaustion and temporary provider unavailability. One HTTP test connection also disconnected after the successful inference; subsequent requests over a fresh connection and the browser passed. A successful test does not guarantee ongoing provider or network availability.
 
-The 2:37 demo was separately checked for decoding, playback, captions, and scene timing. Its successful recorded Gemini response demonstrates one synthetic example, not a benchmark across films.
+The local 2:37 production cut was separately checked for decoding, playback, captions, and scene timing. The current YouTube upload is a shorter 2:19 cut. Its successful recorded Gemini response demonstrates one synthetic example, not a benchmark across films.
 
 ### Troubleshooting
 
@@ -297,3 +298,34 @@ Prepared for **Agentic Cinema: The Blockbuster Hackathon**, with Replit as the i
 ## License
 
 Reveal's repository code is provided under the [MIT License](LICENSE). Uploaded films and scripts remain subject to their own rights and permissions.
+
+
+## Google ADK and Agent Platform
+
+Reveal also supports a Google ADK review agent backed by Gemini on Google Cloud Agent Platform. Select it explicitly with `REVEAL_PROVIDER=agent_platform`. The FastAPI backend executes an ADK `LlmAgent` through a `Runner`; its explicit enterprise Gen AI client authenticates against the configured Cloud project. This is an actual runtime path, not an unused SDK import.
+
+The agent receives the draft cues, optional intent notes, and a private `gs://` video reference. It produces structured findings that pass through Reveal's existing cue and timestamp validation before editorial reconciliation. Each run uses a separate in-memory ADK session and records `google-adk/agent-platform/<model>` on success. ADK orchestration runs in the Replit process; this configuration does not deploy a managed Agent Runtime instance.
+
+Set these Replit Secrets before publishing:
+
+```dotenv
+REVEAL_PROVIDER=agent_platform
+GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID
+GOOGLE_CLOUD_LOCATION=global
+REVEAL_MODEL=gemini-3.6-flash
+REVEAL_GCS_BUCKET=YOUR_PRIVATE_BUCKET_NAME
+GOOGLE_SERVICE_ACCOUNT_JSON=YOUR_SERVICE_ACCOUNT_JSON
+```
+
+`GOOGLE_SERVICE_ACCOUNT_JSON` must contain the entire service-account JSON value, entered only in Replit Secrets. It is not a filename. Locally, omit that secret and use `gcloud auth application-default login`. The identity needs `roles/aiplatform.user` on the project and `roles/storage.objectUser` on the dedicated video bucket. Enable `aiplatform.googleapis.com`, with billing and access to the selected model. Never commit credentials.
+
+Use a bucket with uniform access, public access prevention, and a one-day deletion lifecycle as a backup. The app deletes its temporary video object after success or failure; abrupt process termination can prevent immediate cleanup. Session history is discarded after each run. Source uploads still follow the existing Replit storage limitations.
+
+With explicit `agent_platform` mode, missing configuration, permission errors, quota exhaustion, and provider failures produce a failed review. They never silently select the Developer API or offline heuristics. Existing `auto` mode continues to prefer an API key when supplied, preserving current deployments until deliberately switched.
+
+To verify deployment, create a sample review and confirm it completes with a `google-adk/agent-platform/?` model identifier, then accept an edit and export its SRT. A successful `/health` response alone does not verify Cloud credentials or inference. Availability and model access depend on the configured Cloud project.
+
+References: [Google ADK on Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/adk), [ADK Google Cloud authentication](https://adk.dev/get-started/google-cloud/).
+
+
+Agent Platform verification on September 7 succeeded using the dedicated service account in `cinema-hack-421000`: a fresh synthetic Mara analysis returned one finding and recorded `google-adk/agent-platform/gemini-3.6-flash`. Accepting custom wording and exporting the SRT passed; the temporary Cloud Storage bucket contained zero objects afterward. This test exercised the actual FastAPI endpoints locally with real Google Cloud services. The Replit website still requires the new secrets and a republish before it uses this path. The first attempt correctly failed while Google provisioned its service agent; a later attempt succeeded after provisioning.

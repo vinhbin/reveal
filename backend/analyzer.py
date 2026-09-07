@@ -8,7 +8,7 @@ import subprocess
 import threading
 import time
 from typing import List, Dict, Any, Optional, Tuple
-from backend.config import GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT, REVEAL_MODEL
+from backend.config import GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT, REVEAL_MODEL, REVEAL_PROVIDER
 from backend.models import EvidenceOrigin, UncertaintyLevel
 
 logger = logging.getLogger("reveal.analyzer")
@@ -69,14 +69,24 @@ async def analyze_review(
     If live API credentials exist, invokes Gemini API via thread isolation.
     If API call fails, raises RuntimeError so review status is FAILED.
     """
-    is_live_configured = bool(GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT)
+    provider = REVEAL_PROVIDER
+    if provider == "auto":
+        provider = "developer_api" if GEMINI_API_KEY else ("agent_platform" if GOOGLE_CLOUD_PROJECT else "offline")
+    if provider not in {"developer_api", "agent_platform", "offline"}:
+        raise ValueError("REVEAL_PROVIDER must be auto, developer_api, agent_platform, or offline.")
 
-    if is_live_configured:
+    if provider != "offline":
         try:
+            if provider == "agent_platform":
+                from backend.agent_platform import run_agent_analysis
+                data, model_used = await run_agent_analysis(video_path, cues, intent_notes, media_duration)
+                return validate_findings(data, cues, media_duration), model_used
+            if not GEMINI_API_KEY:
+                raise ValueError("Developer API mode requires GEMINI_API_KEY or GOOGLE_API_KEY.")
             return await _run_gemini_analysis_threaded(video_path, cues, intent_notes, media_duration)
         except Exception as e:
-            logger.error(f"Live Gemini API analysis failed: {e}")
-            raise RuntimeError(f"Live model analysis failed: {str(e)}")
+            logger.error("Live analysis failed for provider %s: %s", provider, e)
+            raise RuntimeError(f"Live model analysis failed: {e}") from e
 
     # Deterministic offline heuristic mode when no API key configured
     findings = run_heuristic_analysis(cues, intent_notes, media_duration)
@@ -186,62 +196,8 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
         raw_text = response.text.strip()
         findings_data = json.loads(raw_text)
 
-        max_cue_index = max((c["index"] for c in cues), default=9999)
-        max_duration = media_duration or (max((c.get("end_seconds", 0.0) for c in cues), default=0.0) + 1.0)
-        valid_findings = []
+        return validate_findings(findings_data, cues, media_duration), model_used
 
-        for item in findings_data:
-            c_idx = int(item.get("cue_index", 0))
-            if c_idx < 1 or c_idx > max_cue_index:
-                continue
-
-            origin_str = str(item.get("evidence_origin", "model_inference")).lower()
-            if origin_str == "dialogue":
-                origin = EvidenceOrigin.DIALOGUE
-            elif origin_str == "filmmaker_intent":
-                origin = EvidenceOrigin.FILMMAKER_INTENT
-            else:
-                # Disallow model claiming human_verification
-                origin = EvidenceOrigin.MODEL_INFERENCE
-
-            unc_str = str(item.get("uncertainty", "medium")).lower()
-            uncertainty = UncertaintyLevel.MEDIUM
-            if unc_str == "low":
-                uncertainty = UncertaintyLevel.LOW
-            elif unc_str == "high":
-                uncertainty = UncertaintyLevel.HIGH
-
-            try:
-                interval_start = float(item.get("interval_start", 0.0))
-                interval_end = float(item.get("interval_end", 0.0))
-            except (ValueError, TypeError):
-                continue
-
-            if not math.isfinite(interval_start) or not math.isfinite(interval_end):
-                logger.warning(
-                    f"Rejecting candidate finding #{c_idx} with non-finite interval [{interval_start}, {interval_end}]."
-                )
-                continue
-
-            # REJECT invalid / out-of-bounds intervals rather than clamping
-            if interval_start < 0.0 or interval_end > (max_duration + 1.0) or interval_start >= interval_end:
-                logger.warning(
-                    f"Rejecting candidate finding #{c_idx} with invalid interval [{interval_start}, {interval_end}] vs max {max_duration}."
-                )
-                continue
-
-            valid_findings.append(CandidateFinding(
-                cue_index=c_idx,
-                candidate_name=str(item.get("candidate_name", "Concealed Character")),
-                issue_description=str(item.get("issue_description", "Premature identity disclosure detected.")),
-                proposed_text=str(item.get("proposed_text", "")),
-                evidence_origin=origin,
-                interval_start=interval_start,
-                interval_end=interval_end,
-                uncertainty=uncertainty
-            ))
-
-        return valid_findings, model_used
 
     def _sync_call():
         from google import genai
@@ -253,7 +209,7 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
             timeout=60000,
             retry_options=types.HttpRetryOptions(attempts=1),
         )
-        client = genai.Client(api_key=GEMINI_API_KEY, http_options=options) if GEMINI_API_KEY else genai.Client(http_options=options)
+        client = genai.Client(enterprise=False, api_key=GEMINI_API_KEY or None, http_options=options)
         uploaded_files = []
         try:
             return _analyze_with_client(client, uploaded_files)
@@ -275,6 +231,71 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
         # provider operation and release its uploaded file in the worker.
         cancelled.set()
         raise
+
+
+def validate_findings(findings_data, cues, media_duration):
+    if not isinstance(findings_data, list):
+        raise ValueError("Analysis response must contain a list of findings.")
+    valid_cue_indices = {c["index"] for c in cues}
+    max_duration = media_duration or (max((c.get("end_seconds", 0.0) for c in cues), default=0.0) + 1.0)
+    valid_findings = []
+
+    for item in findings_data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            c_idx = int(item.get("cue_index", 0))
+        except (ValueError, TypeError, OverflowError):
+            continue
+        if c_idx not in valid_cue_indices:
+            continue
+
+        origin_str = str(item.get("evidence_origin", "model_inference")).lower()
+        if origin_str == "dialogue":
+            origin = EvidenceOrigin.DIALOGUE
+        elif origin_str == "filmmaker_intent":
+            origin = EvidenceOrigin.FILMMAKER_INTENT
+        else:
+            # Disallow model claiming human_verification
+            origin = EvidenceOrigin.MODEL_INFERENCE
+
+        unc_str = str(item.get("uncertainty", "medium")).lower()
+        uncertainty = UncertaintyLevel.MEDIUM
+        if unc_str == "low":
+            uncertainty = UncertaintyLevel.LOW
+        elif unc_str == "high":
+            uncertainty = UncertaintyLevel.HIGH
+
+        try:
+            interval_start = float(item.get("interval_start", 0.0))
+            interval_end = float(item.get("interval_end", 0.0))
+        except (ValueError, TypeError):
+            continue
+
+        if not math.isfinite(interval_start) or not math.isfinite(interval_end):
+            logger.warning(
+                f"Rejecting candidate finding #{c_idx} with non-finite interval [{interval_start}, {interval_end}]."
+            )
+            continue
+
+        # REJECT invalid / out-of-bounds intervals rather than clamping
+        if interval_start < 0.0 or interval_end > (max_duration + 1.0) or interval_start >= interval_end:
+            logger.warning(
+                f"Rejecting candidate finding #{c_idx} with invalid interval [{interval_start}, {interval_end}] vs max {max_duration}."
+            )
+            continue
+
+        valid_findings.append(CandidateFinding(
+            cue_index=c_idx,
+            candidate_name=str(item.get("candidate_name", "Concealed Character")),
+            issue_description=str(item.get("issue_description", "Premature identity disclosure detected.")),
+            proposed_text=str(item.get("proposed_text", "")),
+            evidence_origin=origin,
+            interval_start=interval_start,
+            interval_end=interval_end,
+            uncertainty=uncertainty
+        ))
+    return valid_findings
 
 
 def run_heuristic_analysis(

@@ -1,5 +1,6 @@
 import os
 import asyncio
+import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import pytest
@@ -64,6 +65,13 @@ async def setup_test_db(tmp_path, monkeypatch):
         storage = Path(directory)
         uploads = storage / "uploads"
         uploads.mkdir()
+        # Preserve the legacy cue/name scenarios used by editorial regressions
+        # independently of the actual sample offered to public visitors.
+        samples = storage / "samples"
+        samples.mkdir()
+        shutil.copyfile(Path(__file__).parent / "fixtures" / "legacy_ad.srt", samples / "sample_ad.srt")
+        shutil.copyfile(Path(__file__).parents[1] / "samples" / "sample_short.mp4", samples / "sample_short.mp4")
+        monkeypatch.setattr("backend.routes.reviews.SAMPLES_DIR", samples)
         test_engine = create_async_engine(
             f"sqlite+aiosqlite:///{(storage / 'reviews.db').as_posix()}", echo=False
         )

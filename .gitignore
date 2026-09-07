@@ -4,6 +4,8 @@
 !.env.example
 credentials*.json
 service-account*.json
+reveal-agent-replit.json
+replit-secrets.env
 *.pem
 *.key
 

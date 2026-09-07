@@ -1,0 +1,2 @@
+# Recorded assets are hashed byte-for-byte; checkout must not change line endings.
+backend/samples/sample_ad.srt -text

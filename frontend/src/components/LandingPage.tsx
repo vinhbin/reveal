@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Eye, FileText, Film, Play, Sparkles } from 'lucide-react';
 import './LandingPage.css';
 
-const DEMO_URL = 'https://youtu.be/3x5V9lDEQvI';
+const DEMO_URL = 'https://youtu.be/UKaEIrc2nak';
 
 export function LandingPage({ focusOnMount = false }: { focusOnMount?: boolean }) {
   const [revised, setRevised] = useState(false);

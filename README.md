@@ -194,7 +194,19 @@ npm run dev
 
 Open the frontend at `http://localhost:5173`. API health is at `http://127.0.0.1:8001/health`; interactive API documentation is at `http://127.0.0.1:8001/docs`.
 
+<<<<<<< HEAD
 Use the sample option to explore the workflow, or upload your own aligned clip and draft. When assessing real Gemini functionality, verify that the completed review reports a `google-genai/…` model rather than the offline analyzer. The health endpoint checks the application, not Gemini credentials or quota.
+=======
+### Replit
+
+The Replit workflow starts the FastAPI backend on port 8001 and the Vite
+frontend on port 5000. The frontend proxies `/api` requests to the backend,
+so no separate API URL or frontend environment variable is needed. Gemini
+configuration is optional; without `GEMINI_API_KEY`, the app uses its offline
+heuristic analysis mode.
+
+### 3. Automated Testing
+>>>>>>> 829997a (Initialize project structure and update backend configuration)
 
 ### Verification commands
 

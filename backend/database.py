@@ -28,7 +28,11 @@ def _auto_migrate_columns(target, connection, **kw):
                         sql = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default_clause}"
                         connection.execute(text(sql))
         if insp.has_table("findings"):
-            connection.execute(text("UPDATE findings SET needs_re_review = 0 WHERE needs_re_review IS NULL"))
+            default_value = "FALSE" if connection.dialect.name == "postgresql" else "0"
+            connection.execute(text(
+                f"UPDATE findings SET needs_re_review = {default_value} "
+                "WHERE needs_re_review IS NULL"
+            ))
     except Exception as e:
         import logging
         logging.getLogger("reveal.database").warning(f"Auto-migration notice: {e}")

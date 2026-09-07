@@ -27,6 +27,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
+
+  useEffect(() => { setMediaError(false); }, [videoUrl]);
 
   // Directly seek the video element whenever seekRequest or seekTargetTime updates
   useEffect(() => {
@@ -72,7 +75,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (isPlaying) {
       videoRef.current.pause();
     } else {
-      videoRef.current.play();
+      videoRef.current.play().catch(() => setMediaError(true));
     }
   };
 
@@ -81,7 +84,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInteractive =
-        ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(target?.tagName) ||
+        ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A', 'SUMMARY'].includes(target?.tagName) ||
+        Boolean(target?.closest('summary')) ||
         target?.isContentEditable ||
         target?.getAttribute('role') === 'button' ||
         target?.getAttribute('role') === 'tab';
@@ -151,6 +155,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           src={videoUrl}
+          onError={() => setMediaError(true)}
+          onLoadedMetadata={() => setMediaError(false)}
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           controls={false}
           playsInline
@@ -182,6 +188,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         )}
       </div>
+
+      {mediaError && (
+        <p role="alert" style={{ color: '#fca5a5', overflowWrap: 'anywhere' }}>
+          Video could not be played. It may be missing after a deployment or use an unsupported format.
+          Create a new review with a playable MP4 or WebM clip.
+        </p>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div style={{ position: 'relative', height: '12px', display: 'flex', alignItems: 'center' }}>
@@ -237,8 +250,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             })}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'}>
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </button>

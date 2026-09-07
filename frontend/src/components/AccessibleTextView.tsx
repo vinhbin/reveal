@@ -30,8 +30,8 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
   });
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', background: '#000', color: '#fff', minHeight: '80vh' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+    <div className="accessible-review" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', background: '#000', color: '#fff', minHeight: '80vh', width: '100%', minWidth: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: 800 }}>{title}</h1>
           <p style={{ color: '#aaa', fontSize: '1rem' }}>
@@ -45,6 +45,8 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
         </button>
       </div>
 
+      <p className="table-scroll-hint">On smaller screens, scroll the table sideways to reach editorial decisions.</p>
+      <div className="accessible-table-scroll" role="region" aria-label="Scrollable audio description review table" tabIndex={0}>
       <table
         style={{
           width: '100%',
@@ -240,6 +242,7 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };

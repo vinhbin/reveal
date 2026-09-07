@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { UploadView } from './components/UploadView';
 import { ReviewWorkspace } from './components/ReviewWorkspace';
@@ -19,13 +19,32 @@ export const App: React.FC = () => {
   const [recentReviews, setRecentReviews] = useState<ReviewSummary[]>([]);
   const [isAccessibleView, setIsAccessibleView] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const operationInFlight = useRef(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  const beginOperation = () => {
+    if (operationInFlight.current) return false;
+    operationInFlight.current = true;
+    setError(null);
+    setIsLoading(true);
+    return true;
+  };
+  const endOperation = () => {
+    operationInFlight.current = false;
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    mainRef.current?.focus();
+  }, [currentView, currentReview?.id]);
 
   const loadRecentReviews = async () => {
     try {
       const summaries = await fetchReviews();
       setRecentReviews(summaries);
     } catch (e) {
-      console.error('Failed to load recent reviews', e);
+      setError('Could not load recent reviews. Check your connection and refresh the page.');
     }
   };
 
@@ -39,7 +58,7 @@ export const App: React.FC = () => {
     srtFile: File,
     intentNotes: string
   ) => {
-    setIsLoading(true);
+    if (!beginOperation()) return;
     try {
       const review = await createReview(title, videoFile, srtFile, intentNotes);
       // Automatically trigger analysis after upload
@@ -48,36 +67,36 @@ export const App: React.FC = () => {
       setCurrentView('workspace');
       loadRecentReviews();
     } catch (e: any) {
-      alert(`Upload failed: ${e.message}`);
+      setError(`Upload failed: ${e.message}`);
     } finally {
-      setIsLoading(false);
+      endOperation();
     }
   };
 
   const handleLoadSample = async () => {
-    setIsLoading(true);
+    if (!beginOperation()) return;
     try {
       const review = await createSampleReview();
       setCurrentReview(review);
       setCurrentView('workspace');
       loadRecentReviews();
     } catch (e: any) {
-      alert(`Failed to load sample: ${e.message}`);
+      setError(`Failed to load sample: ${e.message}`);
     } finally {
-      setIsLoading(false);
+      endOperation();
     }
   };
 
   const handleSelectReview = async (reviewId: string) => {
-    setIsLoading(true);
+    if (!beginOperation()) return;
     try {
       const review = await fetchReviewDetail(reviewId);
       setCurrentReview(review);
       setCurrentView('workspace');
     } catch (e: any) {
-      alert(`Failed to load review: ${e.message}`);
+      setError(`Failed to load review: ${e.message}`);
     } finally {
-      setIsLoading(false);
+      endOperation();
     }
   };
 
@@ -106,20 +125,20 @@ export const App: React.FC = () => {
       });
       loadRecentReviews();
     } catch (e: any) {
-      alert(`Failed to update decision: ${e.message}`);
+      setError(`Failed to update decision: ${e.message}`);
     }
   };
 
   const handleReanalyze = async (reviewId: string) => {
-    setIsLoading(true);
+    if (!beginOperation()) return;
     try {
       const reanalyzed = await triggerAnalysis(reviewId);
       setCurrentReview(reanalyzed);
       loadRecentReviews();
     } catch (e: any) {
-      alert(`Re-analysis failed: ${e.message}`);
+      setError(`Re-analysis failed: ${e.message}`);
     } finally {
-      setIsLoading(false);
+      endOperation();
     }
   };
 
@@ -130,7 +149,7 @@ export const App: React.FC = () => {
       setCurrentView('upload');
       loadRecentReviews();
     } catch (e: any) {
-      alert(`Failed to delete review: ${e.message}`);
+      setError(`Failed to delete review: ${e.message}`);
     }
   };
 
@@ -146,9 +165,12 @@ export const App: React.FC = () => {
           setCurrentReview(null);
         }}
         onLoadSample={handleLoadSample}
+        isBusy={isLoading}
       />
 
-      <main className="main-content">
+      <main className="main-content" ref={mainRef} tabIndex={-1}>
+        {error && <div role="alert" className="public-demo-notice">{error}</div>}
+        {isLoading && <p role="status">Working on your review. Please wait before starting another request.</p>}
         {currentView === 'upload' ? (
           <UploadView
             onUpload={handleUpload}

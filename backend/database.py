@@ -5,13 +5,13 @@ from backend.config import DATABASE_URL
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-from sqlalchemy import event, inspect, text
+from sqlalchemy import event, false, inspect, text
 
 class Base(DeclarativeBase):
     pass
 
 def _auto_migrate_columns(target, connection, **kw):
-    """Automatically adds any new columns from models to existing SQLite tables and backfills defaults."""
+    """Add model columns to existing SQLite/PostgreSQL tables and backfill defaults."""
     try:
         insp = inspect(connection)
         for table_name, table in target.tables.items():
@@ -22,7 +22,7 @@ def _auto_migrate_columns(target, connection, **kw):
                         col_type = col.type.compile(connection.dialect)
                         default_clause = ""
                         if col.name == "needs_re_review":
-                            default_clause = " DEFAULT 0"
+                            default_clause = f" DEFAULT {false().compile(dialect=connection.dialect)}"
                         elif col.name in ("start_byte", "end_byte"):
                             default_clause = " DEFAULT 0"
                         sql = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default_clause}"
@@ -33,9 +33,10 @@ def _auto_migrate_columns(target, connection, **kw):
                 f"UPDATE findings SET needs_re_review = {default_value} "
                 "WHERE needs_re_review IS NULL"
             ))
-    except Exception as e:
+    except Exception:
         import logging
-        logging.getLogger("reveal.database").warning(f"Auto-migration notice: {e}")
+        logging.getLogger("reveal.database").exception("Database migration failed")
+        raise
 
 event.listen(Base.metadata, "after_create", _auto_migrate_columns)
 

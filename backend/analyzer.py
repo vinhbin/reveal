@@ -5,6 +5,7 @@ import math
 import os
 import re
 import subprocess
+import threading
 import time
 from typing import List, Dict, Any, Optional, Tuple
 from backend.config import GEMINI_API_KEY, GOOGLE_CLOUD_PROJECT, REVEAL_MODEL
@@ -89,11 +90,15 @@ async def _run_gemini_analysis_threaded(
     media_duration: Optional[float] = None
 ) -> Tuple[List[CandidateFinding], str]:
     """Runs synchronous google-genai client calls in a background thread with strict validation."""
-    def _sync_call():
-        from google import genai
+    cancelled = threading.Event()
+
+    def check_cancelled():
+        if cancelled.is_set():
+            raise RuntimeError("Analysis was interrupted.")
+
+    def _analyze_with_client(client, uploaded_files):
         from google.genai import types
 
-        client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
         model_id = REVEAL_MODEL
         model_used = f"google-genai/{model_id}"
 
@@ -141,12 +146,18 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
             raise ValueError(f"Video file is empty: {video_path}")
 
         logger.info(f"Uploading video file {video_path} to Gemini...")
+        check_cancelled()
         video_file = client.files.upload(file=video_path)
+        uploaded_files.append(video_file.name)
         
         # Poll until video processing state is ACTIVE
         max_polls = 30
         is_active = False
+        processing_deadline = time.monotonic() + 60
         for _ in range(max_polls):
+            check_cancelled()
+            if time.monotonic() >= processing_deadline:
+                break
             file_info = client.files.get(name=video_file.name)
             state_name = getattr(file_info.state, "name", str(file_info.state))
             if state_name == "ACTIVE":
@@ -162,6 +173,7 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
         contents.append(video_file)
         contents.append(prompt)
 
+        check_cancelled()
         response = client.models.generate_content(
             model=model_id,
             contents=contents,
@@ -231,7 +243,38 @@ Note: evidence_origin MUST be one of: "model_inference", "dialogue", "filmmaker_
 
         return valid_findings, model_used
 
-    return await asyncio.to_thread(_sync_call)
+    def _sync_call():
+        from google import genai
+        from google.genai import types
+
+        # SDK requests have their own bound: cancelling asyncio.to_thread does
+        # not stop its worker. Do not automatically retry exhausted quota.
+        options = types.HttpOptions(
+            timeout=60000,
+            retry_options=types.HttpRetryOptions(attempts=1),
+        )
+        client = genai.Client(api_key=GEMINI_API_KEY, http_options=options) if GEMINI_API_KEY else genai.Client(http_options=options)
+        uploaded_files = []
+        try:
+            return _analyze_with_client(client, uploaded_files)
+        finally:
+            for name in uploaded_files:
+                try:
+                    client.files.delete(name=name)
+                except Exception:
+                    logger.warning("Could not delete uploaded Gemini file %s", name)
+            try:
+                client.close()
+            except Exception:
+                logger.warning("Could not close Gemini client")
+
+    try:
+        return await asyncio.to_thread(_sync_call)
+    except asyncio.CancelledError:
+        # Let an in-flight bounded request finish, then stop before the next
+        # provider operation and release its uploaded file in the worker.
+        cancelled.set()
+        raise
 
 
 def run_heuristic_analysis(

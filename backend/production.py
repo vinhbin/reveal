@@ -10,5 +10,5 @@ app = FastAPI(title="Reveal", lifespan=lifespan)
 app.include_router(reviews_router)
 app.add_api_route("/health", health_check, methods=["GET"])
 
-frontend_dist = Path("frontend/dist").resolve()
+frontend_dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

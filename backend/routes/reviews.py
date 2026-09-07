@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import difflib
@@ -29,6 +30,34 @@ MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB
 MIN_VIDEO_SIZE = 1024               # 1KB
 MAX_SRT_SIZE = 5 * 1024 * 1024      # 5MB
 ALLOWED_VIDEO_EXTS = {".mp4", ".webm"}
+ANALYSIS_TIMEOUT_SECONDS = 300
+
+
+async def lock_editorial_review(review_id: str, db: AsyncSession):
+    """Serialize editorial changes with the analysis claim on SQLite and Postgres."""
+    result = await db.execute(
+        update(Review)
+        .where(Review.id == review_id, Review.status != ReviewStatus.ANALYZING)
+        .values(status=Review.status)
+    )
+    if result.rowcount == 0:
+        exists = await db.get(Review, review_id)
+        await db.rollback()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Review not found")
+        raise HTTPException(status_code=409, detail="Wait for analysis to finish before changing this review.")
+
+
+async def fail_analysis(review_id: str, message: str, db: AsyncSession):
+    # Roll back partial reconciliation before recording failure. Existing human
+    # decisions must survive both cancellation and errors while merging results.
+    await db.rollback()
+    await db.execute(
+        update(Review)
+        .where(Review.id == review_id, Review.status == ReviewStatus.ANALYZING)
+        .values(status=ReviewStatus.FAILED, error_message=message)
+    )
+    await db.commit()
 
 
 def validate_video_magic_bytes(header: bytes, ext: str) -> bool:
@@ -291,35 +320,35 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Review not found")
         raise HTTPException(status_code=409, detail="Analysis is already in progress for this review.")
     
-    await db.commit()
-
-    # Fetch review with cues and findings
-    result = await db.execute(
-        select(Review)
-        .options(selectinload(Review.cues), selectinload(Review.findings))
-        .filter(Review.id == review_id)
-    )
-    review = result.scalars().first()
-
-    cues_dict = [
-        {
-            "id": c.id,
-            "index": c.index,
-            "start_time": c.start_time,
-            "end_time": c.end_time,
-            "start_seconds": c.start_seconds,
-            "end_seconds": c.end_seconds,
-            "text": c.text
-        }
-        for c in review.cues
-    ]
-
     try:
-        candidate_findings, model_name = await analyze_review(
-            video_path=review.video_path,
-            cues=cues_dict,
-            intent_notes=review.intent_notes,
-            media_duration=review.media_duration
+        await db.commit()
+
+        result = await db.execute(
+            select(Review)
+            .options(selectinload(Review.cues), selectinload(Review.findings))
+            .filter(Review.id == review_id)
+        )
+        review = result.scalars().first()
+        cues_dict = [
+            {
+                "id": c.id,
+                "index": c.index,
+                "start_time": c.start_time,
+                "end_time": c.end_time,
+                "start_seconds": c.start_seconds,
+                "end_seconds": c.end_seconds,
+                "text": c.text
+            }
+            for c in review.cues
+        ]
+        candidate_findings, model_name = await asyncio.wait_for(
+            analyze_review(
+                video_path=review.video_path,
+                cues=cues_dict,
+                intent_notes=review.intent_notes,
+                media_duration=review.media_duration
+            ),
+            timeout=ANALYSIS_TIMEOUT_SECONDS,
         )
 
         cue_map = {c.index: c for c in review.cues}
@@ -328,12 +357,16 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
             for f in review.findings
         }
 
+        seen_candidates = set()
         for cand in candidate_findings:
             target_cue = cue_map.get(cand.cue_index)
             if not target_cue:
                 continue
 
             key = (cand.cue_index, cand.candidate_name)
+            if key in seen_candidates:
+                continue
+            seen_candidates.add(key)
             if key in existing_findings_map:
                 existing_f = existing_findings_map.pop(key)
                 
@@ -404,11 +437,15 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
         review.status = ReviewStatus.COMPLETED
         review.model_used = model_name
         review.error_message = ""
+        await db.commit()
+    except asyncio.CancelledError:
+        await asyncio.shield(fail_analysis(review_id, "Analysis was interrupted. Please retry.", db))
+        raise
+    except TimeoutError:
+        await fail_analysis(review_id, "Analysis timed out. Please retry when Gemini is available.", db)
     except Exception as e:
-        review.status = ReviewStatus.FAILED
-        review.error_message = f"Analysis failed: {str(e)}"
+        await fail_analysis(review_id, f"Analysis failed: {str(e)}", db)
     
-    await db.commit()
     db.expire_all()
     res = await db.execute(
         select(Review)
@@ -426,6 +463,7 @@ async def update_finding(
     db: AsyncSession = Depends(get_db)
 ):
     """Update finding status (accept, dismiss, mark intentional, reopen) or edit proposed text."""
+    await lock_editorial_review(review_id, db)
     result = await db.execute(
         select(Finding).filter(Finding.id == finding_id, Finding.review_id == review_id)
     )
@@ -636,6 +674,7 @@ async def export_review_srt(review_id: str, db: AsyncSession = Depends(get_db)):
 @router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_review(review_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a review session and its associated files."""
+    await lock_editorial_review(review_id, db)
     result = await db.execute(select(Review).filter(Review.id == review_id))
     review = result.scalars().first()
     if not review:

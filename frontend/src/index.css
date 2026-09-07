@@ -255,12 +255,30 @@ body {
 }
 
 .card {
+  min-width: 0;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow: var(--shadow-subtle);
 }
+
+.public-demo-notice {
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.analysis-error { flex-wrap: wrap; gap: 12px; }
+.analysis-error > div { min-width: 0; flex: 1 1 260px; overflow-wrap: anywhere; }
+.provider-details { margin-top: 8px; font-size: 0.85rem; }
+.provider-details p { max-height: 160px; overflow: auto; margin-top: 8px; }
+.accessible-table-scroll { width: 100%; overflow-x: auto; }
+.accessible-table-scroll table { min-width: 800px; }
+.table-scroll-hint { color: #ccc; margin-bottom: 12px; font-size: 0.85rem; }
+.workspace-grid > *, .grid-responsive > * { min-width: 0; }
 
 .sr-only {
   position: absolute;

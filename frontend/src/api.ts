@@ -2,15 +2,25 @@ import { Review, ReviewSummary, Finding, DecisionStatus } from './types';
 
 const API_BASE = '/api/reviews';
 
+async function requireSuccess(res: Response, fallback: string): Promise<void> {
+  if (res.ok) return;
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  const message = typeof detail === 'string' ? detail
+    : Array.isArray(detail) ? detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join('; ')
+    : '';
+  throw new Error(message || fallback);
+}
+
 export async function fetchReviews(): Promise<ReviewSummary[]> {
   const res = await fetch(API_BASE);
-  if (!res.ok) throw new Error('Failed to fetch reviews');
+  await requireSuccess(res, 'Failed to fetch reviews');
   return res.json();
 }
 
 export async function fetchReviewDetail(reviewId: string): Promise<Review> {
   const res = await fetch(`${API_BASE}/${reviewId}`);
-  if (!res.ok) throw new Error('Failed to fetch review detail');
+  await requireSuccess(res, 'Failed to fetch review detail');
   return res.json();
 }
 
@@ -43,7 +53,7 @@ export async function createSampleReview(): Promise<Review> {
   const res = await fetch(`${API_BASE}/sample`, {
     method: 'POST',
   });
-  if (!res.ok) throw new Error('Failed to create sample review');
+  await requireSuccess(res, 'Failed to create sample review');
   return res.json();
 }
 
@@ -51,7 +61,7 @@ export async function triggerAnalysis(reviewId: string): Promise<Review> {
   const res = await fetch(`${API_BASE}/${reviewId}/analyze`, {
     method: 'POST',
   });
-  if (!res.ok) throw new Error('Failed to run analysis');
+  await requireSuccess(res, 'Failed to run analysis');
   return res.json();
 }
 
@@ -71,7 +81,7 @@ export async function updateFinding(
     body: JSON.stringify(payload),
   });
 
-  if (!res.ok) throw new Error('Failed to update finding decision');
+  await requireSuccess(res, 'Failed to update finding decision');
   return res.json();
 }
 
@@ -79,7 +89,7 @@ export async function deleteReview(reviewId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/${reviewId}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error('Failed to delete review');
+  await requireSuccess(res, 'Failed to delete review');
 }
 
 export function getExportUrl(reviewId: string): string {

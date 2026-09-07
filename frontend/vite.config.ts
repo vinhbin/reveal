@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    allowedHosts: true,
+    allowedHosts: [process.env.REPLIT_DEV_DOMAIN, ...(process.env.REPLIT_DOMAINS || '').split(',')].filter((host): host is string => Boolean(host)),
     port: 5000,
     proxy: {
       '/api': {

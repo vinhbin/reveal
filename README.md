@@ -9,11 +9,11 @@ Reveal helps audio-description editors catch possible identity spoilers before a
 | Explore Reveal | Status |
 | --- | --- |
 | Demo video | [Watch the 2:37 Reveal demo on YouTube](https://youtu.be/py-tZLzaG-U) |
-| Try the app | Replit deployment in progress |
+| Try the app | [Open the public Reveal demo](https://reveal--binepzai2004.replit.app/) |
 | Hackathon submission | Devpost link coming soon |
 | Run locally | [Quick start](#run-locally) |
 
-Current scope: a working local editorial-review MVP. Public deployment is not yet verified.
+Current scope: a public editorial-review demo on Replit. Hosted page loading, API access, upload, video range requests, and unchanged SRT export have been verified. The latest inspected hosted analyses failed with Gemini quota exhaustion; successful fresh inference on the hosted deployment is still pending.
 
 ## The problem: a description can reveal too much
 
@@ -85,7 +85,7 @@ The bundled local sample is a separate workflow fixture involving Detective Vanc
 | Multiple findings on one cue | Cue-level resolution combines accepted entity substitutions and uses custom wording as a base. Conflicting prose still warrants human inspection. |
 | SRT export | Original-byte replacement preserves untouched content and tested BOM, padded-ID, spacing, and CRLF cases. |
 | Review interaction | Cue and finding seeking, repeated seeking to the same timestamp, keyboard controls, and a text-oriented review view retaining playback and decision controls. |
-| Local persistence | SQLite stores reviews, cues, findings, decisions, and original SRT data; uploaded media is stored locally. |
+| Persistence | SQLite locally or PostgreSQL through `DATABASE_URL`; reviews, decisions, and original SRT data are stored in the database. Media remains on the instance filesystem. |
 
 Accessibility controls are implemented, but a formal accessibility audit and testing with blind and low-vision reviewers remain future work. Model-reported uncertainty is not a calibrated probability.
 
@@ -129,14 +129,14 @@ Offline findings contain a demo-rule label and synthetic intervals. Use this mod
 | Interface | React 18, TypeScript, Vite, Lucide icons, HTML video |
 | API | Python, FastAPI, Pydantic |
 | Model integration | Google Gen AI SDK (`google-genai`), Gemini API |
-| Persistence | SQLAlchemy, SQLite, aiosqlite |
+| Persistence | SQLAlchemy, SQLite/aiosqlite or PostgreSQL/asyncpg |
 | Media inspection | FFmpeg / ffprobe |
 | Verification | pytest, pytest-asyncio, HTTPX; TypeScript and Vite build |
-| Planned publishing target | Replit; deployment verification pending |
+| Publishing | Replit; FastAPI serves the production frontend and API on port 5000 |
 
 ## Run locally
 
-Prerequisites: Python 3.11 or 3.12, Node.js with npm, Git, and FFmpeg with `ffprobe` on `PATH`. The latest local verification used Python 3.12. A Gemini API key is required for real video analysis; offline exploration requires no model key.
+Prerequisites: Python 3.12 or newer, Node.js 20 or newer with npm, Git, and FFmpeg with `ffprobe` on `PATH`. The latest local verification used Python 3.12. A Gemini API key is required for real video analysis; offline exploration requires no model key.
 
 Clone the repository once it is available to your GitHub account:
 
@@ -167,7 +167,7 @@ python -c "from pathlib import Path; p=Path('.env'); p.exists() or p.write_bytes
 ffprobe -version
 ```
 
-`config.py` imports `python-dotenv`; install it explicitly because it is not directly listed in the current requirements file. The copy command preserves an existing `.env`.
+`python-dotenv` is declared in the requirements; the separate installation command is harmless if already installed. The copy command preserves an existing `.env`.
 
 For live mode, edit the local `.env`:
 
@@ -192,21 +192,34 @@ npm ci
 npm run dev
 ```
 
-Open the frontend at `http://localhost:5173`. API health is at `http://127.0.0.1:8001/health`; interactive API documentation is at `http://127.0.0.1:8001/docs`.
+Open the frontend at `http://localhost:5000`. API health is at `http://127.0.0.1:8001/health`; interactive API documentation is at `http://127.0.0.1:8001/docs`.
 
-<<<<<<< HEAD
 Use the sample option to explore the workflow, or upload your own aligned clip and draft. When assessing real Gemini functionality, verify that the completed review reports a `google-genai/…` model rather than the offline analyzer. The health endpoint checks the application, not Gemini credentials or quota.
-=======
-### Replit
 
-The Replit workflow starts the FastAPI backend on port 8001 and the Vite
-frontend on port 5000. The frontend proxies `/api` requests to the backend,
-so no separate API URL or frontend environment variable is needed. Gemini
-configuration is optional; without `GEMINI_API_KEY`, the app uses its offline
-heuristic analysis mode.
+### Replit development workflow
 
-### 3. Automated Testing
->>>>>>> 829997a (Initialize project structure and update backend configuration)
+The development workflow runs FastAPI on port 8001 and Vite on port 5000. Vite proxies API requests to the backend. Publishing uses the production startup below instead.
+
+Live analysis requires a configured API key and available quota. Offline mode requires both API-key variables and the Google Cloud project setting to be empty; it does not inspect the video.
+
+
+### Production startup
+
+Replit installs Python dependencies from `pyproject.toml` and `uv.lock`. Its build runs:
+
+```sh
+uv sync --locked
+npm --prefix frontend ci --include=dev
+npm --prefix frontend run build
+```
+
+The production command is:
+
+```sh
+uv run --no-sync python -m uvicorn backend.production:app --host 0.0.0.0 --port 5000
+```
+
+Analysis calls have a five-minute application timeout and bounded SDK requests. Interrupted requests become visible failures. An abrupt process kill can still leave a review marked analyzing; automatic recovery after process termination is not implemented. Editing and deleting a review while analysis is running returns HTTP 409 to protect accepted wording.
 
 ### Verification commands
 
@@ -222,7 +235,7 @@ From `frontend`:
 npm run build
 ```
 
-On September 6, 2026, all **21 existing backend tests passed**, and the frontend production build succeeded against application revision `6e14997`. The backend suite uses mocked model calls and covers sample workflows, concurrency, editorial preservation, SRT formatting, legacy database serialization, and merge regressions. These tests do not establish model accuracy or current provider availability.
+On September 7, 2026, all **35 backend tests passed**, and the production frontend built successfully with Vite 6.4.3. Sixteen local production-browser checks passed, covering failure states, duplicate-request prevention, mobile access to decisions, saving, reloading, seeking, and export. npm audit reported zero advisories at that check. The backend suite uses mocked model calls and covers sample workflows, concurrency, editorial preservation, SRT formatting, legacy database serialization, and merge regressions. These tests do not establish model accuracy or current provider availability.
 
 The 2:37 demo was separately checked for decoding, playback, captions, and scene timing. Its successful recorded Gemini response demonstrates one synthetic example, not a benchmark across films.
 
@@ -262,9 +275,9 @@ All review routes use `/api/reviews` as their prefix. The running API's `/docs` 
 
 **Editorial scope.** Reveal focuses on possible premature identity disclosures in an English-language clip and supplied script. It can miss earlier context outside that clip, misunderstand a scene, or propose unsuitable wording. Review the film and final export. It is not a complete AD quality checker or an accessibility certification tool.
 
-**Public hosting.** The current app has no per-user authentication or ownership boundary. Reviews and media are shared within an instance, and SQLite/uploads use local disk. A public production release needs access control, durable storage, upload-retention decisions, and model-usage controls. Provider-side uploaded-file deletion is not currently managed by Reveal.
+**Public hosting.** This is intentionally a shared public demo with no per-user authentication or ownership boundary. Other visitors can access and change reviews. Use non-confidential test material. Separate accounts, durable media storage, and model-usage controls remain future work. `REVEAL_UPLOAD_DIR` can point to persistent storage when one is provisioned; setting it does not itself provision storage. Gemini uploads are now deleted on completion or failure on a best-effort basis.
 
-**Deployment.** Replit publishing is in progress. The backend currently serves the API, while Vite provides the development frontend and proxy. A successful frontend build alone does not configure production serving or `/api` routing. Hosted end-to-end testing remains pending.
+**Deployment.** The published app uses `backend.production:app` to serve the compiled frontend and API together. Development still uses the separate Vite proxy. Code changes require a new Replit publish. The database can survive while local media disappears across deployments; durable media storage is not configured by this repository.
 
 **Validation roadmap.** Evaluate with professional describers and blind/low-vision participants; build an annotated set of reveal and non-reveal scenes; measure precision, missed issues, reviewer time, false-positive burden, and comprehension. Use those results to assess usefulness before claiming productivity or cost savings.
 
@@ -272,7 +285,7 @@ All review routes use `/api/reviews` as their prefix. The running API's `/docs` 
 
 ## Hackathon status
 
-Prepared for **Agentic Cinema: The Blockbuster Hackathon**, with Replit as the intended track. The local review workflow and real Gemini integration are implemented; Replit Agent's completed contribution, the hosted application, and final submission links still need to be verified. This README describes product status and does not certify competition eligibility. See the [official event rules](https://agentic-cinema.devpost.com/rules).
+Prepared for **Agentic Cinema: The Blockbuster Hackathon**, with Replit as the intended track. The review workflow and real Gemini integration are implemented. Replit Agent configured startup, proxying, dependencies, and PostgreSQL compatibility, and the application is published on Replit. Hosted Gemini quota and final Devpost submission remain outstanding. This README describes product status and does not certify competition eligibility. See the [official event rules](https://agentic-cinema.devpost.com/rules).
 
 ## License
 

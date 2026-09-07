@@ -6,6 +6,7 @@ import { FindingInspector } from './FindingInspector';
 import { AccessibleTextView } from './AccessibleTextView';
 import { Download, RefreshCw, Trash2, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { getExportUrl, getVideoUrl } from '../api';
+import { analysisErrorMessage } from '../reviewStatus';
 
 interface ReviewWorkspaceProps {
   review: Review;
@@ -56,7 +57,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Review Status Banner for Analyzing or Failed States */}
-      {review.status === 'analyzing' && (
+      {(review.status === 'analyzing' || isAnalyzing) && (
         <div
           role="status"
           style={{
@@ -80,6 +81,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
       {review.status === 'failed' && (
         <div
           role="alert"
+          className="analysis-error"
           style={{
             background: 'rgba(239, 68, 68, 0.15)',
             border: '1px solid #ef4444',
@@ -94,7 +96,13 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
             <div>
-              <strong>Analysis Failed:</strong> {review.error_message || 'Model service encountered an error.'}
+              <strong>Analysis failed:</strong> {analysisErrorMessage(review.error_message)}
+              {review.error_message && (
+                <details className="provider-details">
+                  <summary>Technical details</summary>
+                  <p>{review.error_message}</p>
+                </details>
+              )}
             </div>
           </div>
 
@@ -120,7 +128,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         <div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{review.title}</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            <span>Model: <strong>{review.model_used || 'reveal-heuristic-analyzer'}</strong></span>
+            <span>Last completed analysis: <strong>{review.model_used || 'None yet'}</strong></span>
             <span>Total Cues: <strong>{review.cues.length}</strong></span>
             <span>Findings: <strong>{review.findings.length}</strong></span>
             <span>Unreviewed: <strong style={{ color: '#f59e0b' }}>{unreviewedCount}</strong></span>
@@ -141,6 +149,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
 
           <button
             className="btn btn-danger"
+            disabled={isAnalyzing || review.status === 'analyzing'}
             onClick={() => {
               if (window.confirm('Are you sure you want to delete this review session and its video file?')) {
                 onDeleteReview(review.id);

@@ -8,6 +8,7 @@ interface HeaderProps {
   onToggleAccessibleView: () => void;
   onNewReview: () => void;
   onLoadSample: () => void;
+  isBusy: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,10 +18,11 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleAccessibleView,
   onNewReview,
   onLoadSample,
+  isBusy,
 }) => {
   return (
     <header className="header" role="banner">
-      <div className="brand" onClick={onNewReview} style={{ cursor: 'pointer' }}>
+      <button type="button" className="brand" onClick={onNewReview} disabled={isBusy} aria-label="Reveal home" style={{ cursor: 'pointer', background: 'none', border: 0, font: 'inherit' }}>
         <div className="brand-icon">
           <Eye className="w-5 h-5 text-white" />
         </div>
@@ -30,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
             AD Reviewer
           </span>
         </div>
-      </div>
+      </button>
 
       {currentView === 'workspace' && title && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
@@ -41,14 +43,14 @@ export const Header: React.FC<HeaderProps> = ({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {currentView === 'upload' && (
-          <button className="btn btn-secondary" onClick={onLoadSample}>
+          <button className="btn btn-secondary" onClick={onLoadSample} disabled={isBusy}>
             <Sparkles className="w-4 h-4 text-amber-400" />
             Try Demo Sample
           </button>
         )}
 
         {currentView === 'workspace' && (
-          <button className="btn btn-secondary" onClick={onNewReview}>
+          <button className="btn btn-secondary" onClick={onNewReview} disabled={isBusy}>
             + New Review
           </button>
         )}

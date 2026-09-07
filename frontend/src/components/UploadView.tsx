@@ -52,6 +52,11 @@ export const UploadView: React.FC<UploadViewProps> = ({
         </p>
       </div>
 
+      <p role="note" className="public-demo-notice">
+        <strong>Shared public demo.</strong> Reviews and uploads are visible to other visitors.
+        Use sample or non-confidential material. Live analysis sends your clip and script to Google.
+      </p>
+
       {error && (
         <div
           role="alert"
@@ -245,6 +250,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                 {recentReviews.map((r) => (
                   <button
                     key={r.id}
+                    disabled={isSubmitting}
                     onClick={() => onSelectReview(r.id)}
                     aria-label={`Open review session: ${r.title}`}
                     style={{
@@ -262,7 +268,13 @@ export const UploadView: React.FC<UploadViewProps> = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       <span>{r.cue_count} Cues</span>
                       <span className={`badge badge-${r.status === 'completed' ? 'accepted' : 'unreviewed'}`}>
-                        {r.finding_count} Findings
+                        {r.status === 'completed'
+                          ? `${r.finding_count} Findings`
+                          : r.status === 'failed'
+                            ? 'Analysis failed'
+                            : r.status === 'analyzing'
+                              ? 'Analyzing'
+                              : 'Awaiting analysis'}
                       </span>
                     </div>
                   </button>

@@ -8,17 +8,17 @@ load_dotenv()
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR = Path(os.getenv("REVEAL_UPLOAD_DIR", str(BASE_DIR / "uploads"))).resolve()
 SAMPLES_DIR = BASE_DIR / "samples"
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{BASE_DIR}/reveal.db")
-if DATABASE_URL.startswith(("postgres://", "postgresql://")):
+if DATABASE_URL.startswith(("postgres://", "postgresql://", "postgresql+asyncpg://")):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     parsed_database_url = urlsplit(DATABASE_URL)
     database_query = [
-        (key, value)
+        ("ssl" if key == "sslmode" else key, value)
         for key, value in parse_qsl(parsed_database_url.query)
-        if key not in {"sslmode", "channel_binding"}
+        if key != "channel_binding"
     ]
     DATABASE_URL = urlunsplit(parsed_database_url._replace(query=urlencode(database_query)))
 

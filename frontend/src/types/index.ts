@@ -48,6 +48,8 @@ export interface Review {
   status: ReviewStatus;
   error_message?: string;
   model_used?: string;
+  analysis_source?: 'live' | 'recorded' | 'offline' | null;
+  recorded_at?: string | null;
   created_at: string;
   updated_at: string;
   cues: Cue[];
@@ -60,6 +62,9 @@ export interface ReviewSummary {
   video_filename: string;
   srt_filename: string;
   status: ReviewStatus;
+  model_used?: string | null;
+  analysis_source?: 'live' | 'recorded' | 'offline' | null;
+  recorded_at?: string | null;
   cue_count: number;
   finding_count: number;
   unreviewed_count: number;

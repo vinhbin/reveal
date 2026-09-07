@@ -49,6 +49,8 @@ class Review(Base):
     status: Mapped[ReviewStatus] = mapped_column(SQLEnum(ReviewStatus), default=ReviewStatus.PENDING)
     error_message: Mapped[str] = mapped_column(Text, nullable=True, default="")
     model_used: Mapped[str] = mapped_column(String(100), nullable=True, default="")
+    analysis_source: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 

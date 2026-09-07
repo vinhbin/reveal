@@ -40,18 +40,19 @@ export const CueList: React.FC<CueListProps> = ({
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+        <h2 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Filter className="w-4 h-4 text-indigo-400" />
           AD Cues ({filteredCues.length} of {cues.length})
-        </h3>
+        </h2>
 
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div role="group" aria-label="Filter audio description cues" style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {(['all', 'findings', 'unreviewed', 'accepted'] as const).map((f) => (
             <button
               key={f}
               className={`btn ${filter === f ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setFilter(f)}
+              aria-pressed={filter === f}
               style={{ padding: '4px 10px', fontSize: '0.75rem', textTransform: 'capitalize' }}
             >
               {f}
@@ -69,19 +70,6 @@ export const CueList: React.FC<CueListProps> = ({
           return (
             <div
               key={cue.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                onSelectCue(cue);
-                if (cueFindings.length > 0) onSelectFinding(cueFindings[0]);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelectCue(cue);
-                  if (cueFindings.length > 0) onSelectFinding(cueFindings[0]);
-                }
-              }}
               style={{
                 padding: '12px 14px',
                 borderRadius: 'var(--radius-md)',
@@ -101,18 +89,25 @@ export const CueList: React.FC<CueListProps> = ({
                         : 'var(--border-subtle)'
                     }`
                   : '1px solid var(--border-subtle)',
-                cursor: 'pointer',
                 transition: 'all 0.2s ease',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="cue-select"
+                aria-label={`Play cue ${cue.index} at ${cue.start_time}: ${cue.text}`}
+                onClick={() => {
+                  onSelectCue(cue);
+                  if (cueFindings.length > 0) onSelectFinding(cueFindings[0]);
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: '0.75rem',
                       fontWeight: 700,
-                      color: 'var(--accent-primary)',
+                      color: '#b5b8ff',
                       background: 'var(--bg-card)',
                       padding: '2px 6px',
                       borderRadius: '4px',
@@ -124,18 +119,20 @@ export const CueList: React.FC<CueListProps> = ({
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                     {cue.start_time} &rarr; {cue.end_time}
                   </span>
-                </div>
+                </span>
+                <span style={{ display: 'block', fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4, marginTop: '6px' }}>{cue.text}</span>
+              </button>
 
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: cueFindings.length ? '10px' : 0 }}>
                   {cueFindings.map((f) => (
                     <button
                       type="button"
                       key={f.id}
                       className={`badge badge-${f.status}`}
                       aria-label={`Select finding #${f.cue_index} for ${f.candidate_name}, status ${f.status}`}
+                      aria-pressed={selectedFindingId === f.id}
                       style={{ cursor: 'pointer', border: '1px solid transparent' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         onSelectCue(cue);
                         onSelectFinding(f);
                       }}
@@ -148,9 +145,6 @@ export const CueList: React.FC<CueListProps> = ({
                     </button>
                   ))}
                 </div>
-              </div>
-
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>{cue.text}</p>
 
               {cueFindings.some((f) => f.status === 'accepted') && (
                 <div

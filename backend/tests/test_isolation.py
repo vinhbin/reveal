@@ -18,7 +18,9 @@ async def test_each_test_starts_with_clean_database_and_uploads(setup_test_db, i
         assert response.status_code == 201
         assert response.json()["model_used"] == "mock-test-model"
         assert len((await client.get("/api/reviews")).json()) == 1
-        assert list(UPLOAD_DIR.iterdir())
+        assert not list(UPLOAD_DIR.iterdir())  # Bundled samples need no ephemeral copy.
+        # This file must be absent in the next isolated test's upload directory.
+        (UPLOAD_DIR / "isolation-marker.txt").write_text("test-only", encoding="utf-8")
 
 
 def test_accidental_live_gemini_client_is_blocked():

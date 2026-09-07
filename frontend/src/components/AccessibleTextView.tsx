@@ -9,6 +9,8 @@ interface AccessibleTextViewProps {
   onUpdateDecision: (findingId: string, status?: DecisionStatus, editedProposal?: string) => void;
   onExport: () => void;
   onSeek?: (seconds: number) => void;
+  analysisCompleted: boolean;
+  hasAcceptedEdits: boolean;
 }
 
 export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
@@ -18,6 +20,8 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
   onUpdateDecision,
   onExport,
   onSeek,
+  analysisCompleted,
+  hasAcceptedEdits,
 }) => {
   const [editedProposals, setEditedProposals] = useState<Record<string, string>>({});
 
@@ -33,21 +37,21 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
     <div className="accessible-review" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', background: '#000', color: '#fff', minHeight: '80vh', width: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 800 }}>{title}</h1>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Text review</h2>
           <p style={{ color: '#aaa', fontSize: '1rem' }}>
-            High-Contrast Accessible Text Review Table (Screen Reader & Accessible Editorial Mode)
+            Review each cue, edit proposed wording, and make an editorial decision.
           </p>
         </div>
 
         <button className="btn btn-primary" onClick={onExport} style={{ padding: '12px 20px', fontSize: '1rem' }}>
           <Download className="w-5 h-5" />
-          Export Revised SRT
+          {hasAcceptedEdits ? 'Export revised SRT' : 'Export original SRT'}
         </button>
       </div>
 
-      <p className="table-scroll-hint">On smaller screens, scroll the table sideways to reach editorial decisions.</p>
-      <div className="accessible-table-scroll" role="region" aria-label="Scrollable audio description review table" tabIndex={0}>
+      <div className="accessible-table-scroll">
       <table
+        role="table"
         style={{
           width: '100%',
           borderCollapse: 'collapse',
@@ -56,21 +60,22 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
         }}
         aria-label="Audio Description Script Cues and Identity Disclosures Table"
       >
-        <thead>
-          <tr style={{ borderBottom: '2px solid #fff', textAlign: 'left' }}>
-            <th style={{ padding: '12px', width: '80px' }}>Cue #</th>
-            <th style={{ padding: '12px', width: '180px' }}>Timestamp</th>
-            <th style={{ padding: '12px' }}>Audio Description & Candidate Disclosures</th>
-            <th style={{ padding: '12px', width: '320px' }}>Editorial Decisions</th>
+        <caption className="sr-only">Audio description review for {title}</caption>
+        <thead role="rowgroup">
+          <tr role="row" style={{ borderBottom: '2px solid #fff', textAlign: 'left' }}>
+            <th role="columnheader" scope="col" style={{ padding: '12px', width: '80px' }}>Cue #</th>
+            <th role="columnheader" scope="col" style={{ padding: '12px', width: '180px' }}>Timestamp</th>
+            <th role="columnheader" scope="col" style={{ padding: '12px' }}>Audio Description & Candidate Disclosures</th>
+            <th role="columnheader" scope="col" style={{ padding: '12px', width: '320px' }}>Editorial Decisions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {cues.map((cue) => {
             const cueFindings = findingsMap.get(cue.id) || [];
             return (
-              <tr key={cue.id} style={{ borderBottom: '1px solid #333' }}>
-                <td style={{ padding: '12px', fontWeight: 'bold' }}>#{cue.index}</td>
-                <td style={{ padding: '12px', fontFamily: 'monospace' }}>
+              <tr role="row" key={cue.id} style={{ borderBottom: '1px solid #333' }}>
+                <th role="rowheader" scope="row" style={{ padding: '12px', fontWeight: 'bold', textAlign: 'left' }}>Cue #{cue.index}</th>
+                <td role="cell" style={{ padding: '12px', fontFamily: 'monospace' }}>
                   <div>{cue.start_time} - {cue.end_time}</div>
                   {onSeek && (
                     <button
@@ -95,7 +100,7 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                     </button>
                   )}
                 </td>
-                <td style={{ padding: '12px' }}>
+                <td role="cell" style={{ padding: '12px' }}>
                   <div><strong>Original Text:</strong> {cue.text}</div>
 
                   {cueFindings.map((finding) => {
@@ -191,7 +196,8 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                     );
                   })}
                 </td>
-                <td style={{ padding: '12px' }}>
+                <td role="cell" style={{ padding: '12px' }}>
+                  <strong className="mobile-cell-label">Editorial decisions</strong>
                   {cueFindings.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {cueFindings.map((finding) => {
@@ -216,7 +222,7 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                               </button>
                               <button
                                 onClick={() => onUpdateDecision(finding.id, 'intentional')}
-                                style={{ padding: '6px 10px', background: '#a855f7', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                style={{ padding: '6px 10px', background: '#7e22ce', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                               >
                                 <ShieldAlert className="w-3 h-3" /> Intentional
                               </button>
@@ -234,7 +240,7 @@ export const AccessibleTextView: React.FC<AccessibleTextViewProps> = ({
                       })}
                     </div>
                   ) : (
-                    <span style={{ color: '#888' }}>Clean Cue</span>
+                    <span style={{ color: '#aaa' }}>{analysisCompleted ? 'No findings for this cue' : 'Not analyzed — no completed result yet'}</span>
                   )}
                 </td>
               </tr>

@@ -37,23 +37,23 @@ export const Header: React.FC<HeaderProps> = ({
       </button>
 
       {currentView === 'workspace' && title && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
+        <div className="header-review-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
           <Film className="w-4 h-4 text-indigo-400" />
           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="header-actions">
         {currentView === 'upload' && (
           <button className="btn btn-secondary" onClick={onLoadSample} disabled={isBusy}>
             <Sparkles className="w-4 h-4 text-amber-400" />
-            Try Demo Sample
+            Saved example
           </button>
         )}
 
         {currentView === 'workspace' && (
           <button className="btn btn-secondary" onClick={onNewReview} disabled={isBusy}>
-            + New Review
+            + New review
           </button>
         )}
 
@@ -61,10 +61,10 @@ export const Header: React.FC<HeaderProps> = ({
           className={`btn ${isAccessibleView ? 'btn-primary' : 'btn-secondary'}`}
           onClick={onToggleAccessibleView}
           aria-pressed={isAccessibleView}
-          title="Toggle High-Contrast Screen Reader Optimized View"
+          title={isAccessibleView ? 'Switch to standard review' : 'Switch to text review'}
         >
           <Accessibility className="w-4 h-4" />
-          {isAccessibleView ? 'Standard View' : 'Accessible Text View'}
+          {isAccessibleView ? 'Standard view' : 'Text review'}
         </button>
       </div>
     </header>

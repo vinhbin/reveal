@@ -29,7 +29,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [mediaError, setMediaError] = useState(false);
 
-  useEffect(() => { setMediaError(false); }, [videoUrl]);
+  useEffect(() => {
+    setMediaError(false);
+    setDuration(0);
+    setIsPlaying(false);
+  }, [videoUrl]);
 
   // Directly seek the video element whenever seekRequest or seekTargetTime updates
   useEffect(() => {
@@ -71,7 +75,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [onTimeUpdate]);
 
   const togglePlay = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || mediaError) return;
     if (isPlaying) {
       videoRef.current.pause();
     } else {
@@ -82,7 +86,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Keyboard controls for J, L, K, Space
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (videoRef.current?.closest('[hidden]')) return;
+      if (mediaError || videoRef.current?.closest('[hidden]')) return;
       const target = e.target as HTMLElement;
       const isInteractive =
         ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A', 'SUMMARY'].includes(target?.tagName) ||
@@ -122,7 +126,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [duration, isPlaying, onTimeUpdate]);
+  }, [duration, isPlaying, mediaError, onTimeUpdate]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
@@ -148,7 +152,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           overflow: 'hidden',
           background: '#000',
           aspectRatio: '16/9',
-          display: 'flex',
+          display: mediaError ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -156,7 +160,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           src={videoUrl}
-          onError={() => setMediaError(true)}
+          onError={() => { setMediaError(true); setIsPlaying(false); }}
           onLoadedMetadata={() => setMediaError(false)}
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           controls={false}
@@ -192,12 +196,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       {mediaError && (
         <p role="alert" style={{ color: '#fca5a5', overflowWrap: 'anywhere' }}>
-          Video could not be played. It may be missing after a deployment or use an unsupported format.
-          Create a new review with a playable MP4 or WebM clip.
+          <strong>Video unavailable.</strong> The clip could not be loaded or played. You can still review the script,
+          or start a new review with a playable MP4 or WebM clip.
         </p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <fieldset disabled={mediaError} aria-label="Video playback controls" style={{ display: mediaError ? 'none' : 'flex', flexDirection: 'column', gap: '8px', border: 0, minWidth: 0 }}>
         <div style={{ position: 'relative', height: '12px', display: 'flex', alignItems: 'center' }}>
           <input
             type="range"
@@ -292,7 +296,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             Keyboard: <kbd>Space</kbd> / <kbd>K</kbd> Play/Pause &bull; <kbd>J</kbd>/<kbd>L</kbd> Seek 5s
           </div>
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 };

@@ -75,6 +75,14 @@ The demo opens a saved result from a successful Gemini API analysis and shows th
 
 The bundled sample is the original synthetic Mara film and its matching three-cue AD script. The script names Mara at five seconds; the film reveals her badge at 66 seconds. The scene is a controlled demonstration, not a benchmark on commercial films.
 
+### Try a recorded example without using model quota
+
+In the editor, choose **Open saved Gemini example**. Reveal creates an independent editable review from the successful September 7 Google ADK/Agent Platform analysis. The banner identifies the recording date and provider; opening it, editing wording and exporting do not call Gemini. Each new copy starts with unreviewed findings. Editing a copy cannot change the underlying public snapshot.
+
+Choose **Analyze sample** or **Re-run Analysis** to request fresh analysis from the configured provider. These actions require working credentials and quota for live providers. Failed calls remain visible and preserve the last completed result. Failed historical reviews remain available through **Include failed reviews** in the recent-review list.
+
+The recorded snapshot includes SHA-256 hashes of its exact film and script. New bundled reviews store a versioned media reference that resolves against the deployed sample directory, so their video remains playable after a deployment path changes. This does not recover older uploaded clips or provide durable storage for user uploads.
+
 ## Implemented features
 
 | Capability | Current behavior |
@@ -110,9 +118,9 @@ flowchart TD
     UI --> EXPORT[Export approved SRT]
 ```
 
-The backend calls `client.files.upload`, polls `client.files.get`, and invokes `client.models.generate_content` with a JSON response configuration. Synchronous SDK work runs in a worker thread. Non-finite and invalid evidence intervals are rejected; media duration comes from `ffprobe` when available.
+The diagram above describes the optional Developer API path: `client.files.upload`, polling `client.files.get`, and `client.models.generate_content` with a JSON response configuration. The deployed Agent Platform path instead uses private Cloud Storage media and an ADK Runner, as documented below. Synchronous SDK work runs in a worker thread. Non-finite and invalid evidence intervals are rejected; media duration comes from `ffprobe` when available.
 
-The code defaults to `gemini-2.5-flash`; the hosted demo sets `REVEAL_MODEL=gemini-3.6-flash` in Replit Secrets. Both the saved analysis shown in the recorded demo and the September 7 fresh hosted test report `google-genai/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
+The code defaults to `gemini-2.5-flash`; the hosted demo sets `REVEAL_MODEL=gemini-3.6-flash` in Replit Secrets. The earlier video walkthrough reports `google-genai/gemini-3.6-flash`. The later hosted Agent Platform test and bundled recorded example report `google-adk/agent-platform/gemini-3.6-flash`. Each completed review records its `model_used`; available models and quotas depend on the configured account.
 
 The earlier verified hosted path uses the **Gemini Developer API** and an API key. The new **Google ADK + Agent Platform** path is now deployed and verified on Replit using the Cloud configuration below. A Cloud project environment variable alone does not switch an existing API-key deployment; select `REVEAL_PROVIDER=agent_platform` and verify its recorded provider after publishing.
 
@@ -132,15 +140,15 @@ Offline findings contain a demo-rule label and synthetic intervals. Use this mod
 | --- | --- |
 | Interface | React 18, TypeScript, Vite, Lucide icons, HTML video |
 | API | Python, FastAPI, Pydantic |
-| Model integration | Google Gen AI SDK (`google-genai`), Gemini API |
+| Model integration | Google ADK, Google Gen AI SDK (`google-genai`), Gemini on Agent Platform, Cloud Storage; optional Gemini Developer API |
 | Persistence | SQLAlchemy, SQLite/aiosqlite or PostgreSQL/asyncpg |
 | Media inspection | FFmpeg / ffprobe |
-| Verification | pytest, pytest-asyncio, HTTPX; TypeScript and Vite build |
+| Verification | pytest, pytest-asyncio, HTTPX; TypeScript, Vite and Playwright |
 | Publishing | Replit; FastAPI serves the production frontend and API on port 5000 |
 
 ## Run locally
 
-Prerequisites: Python 3.12 or newer, Node.js 20 or newer with npm, Git, and FFmpeg with `ffprobe` on `PATH`. The latest local verification used Python 3.12. A Gemini API key is required for real video analysis; offline exploration requires no model key.
+Prerequisites: Python 3.12 or newer, Node.js 20 or newer with npm, Git, and FFmpeg with `ffprobe` on `PATH`. The latest local verification used Python 3.12. Real video analysis requires either a Gemini API key or the Agent Platform Cloud configuration below. The recorded example and offline exploration require no model key.
 
 Clone the repository once it is available to your GitHub account:
 
@@ -198,7 +206,7 @@ npm run dev
 
 Open the frontend at `http://localhost:5000`. API health is at `http://127.0.0.1:8001/health`; interactive API documentation is at `http://127.0.0.1:8001/docs`.
 
-Use the sample option to explore the workflow, or upload your own aligned clip and draft. When assessing real Gemini functionality, verify that the completed review reports a `google-genai/…` model rather than the offline analyzer. The health endpoint checks the application, not Gemini credentials or quota.
+Open the saved example to explore without a model call, or analyze the sample/upload your own aligned clip and draft. A fresh successful Gemini review reports a `google-genai/…` or `google-adk/agent-platform/…` model. The health endpoint checks the application, not Gemini credentials or quota. A recorded example proves an earlier result; it does not verify current credentials.
 
 ### Replit development workflow
 
@@ -236,16 +244,20 @@ python -m pytest -q backend/tests
 From `frontend`:
 
 ```sh
-npm run build
+npm ci
+npx playwright install chromium
+npm run test:e2e
 ```
 
-On September 7, 2026, all **59 backend tests passed**, including a regression for reconnecting closed idle database connections. The disconnect fix also passed an isolated PostgreSQL 16 probe. The production frontend built successfully with Vite 6.4.3, and npm audit reported zero advisories at that check. Sixteen local production-browser checks passed. The suite also exercises the real ADK Runner and Gen AI SDK with intercepted HTTP, validating the Cloud request and response schema without network access. The backend suite uses mocked model calls; these are engineering checks, not model-accuracy measurements.
+`test:e2e` builds the production frontend and runs seven browser regressions against fictional, intercepted API fixtures. Tests cover recorded provenance, independent keyboard activation, loading state, mobile layout, failure wording, unavailable video, and draft-preserving navigation. They do not contact Gemini or the public deployment. Backend recorded-example tests additionally exercise immutable snapshots, independent editorial copies, unchanged export bytes, deployment-root changes, protected sample deletion, legacy migrations and provenance after reanalysis.
+
+On September 7, 2026, all **65 backend tests and seven Playwright regressions passed**. A separate local production check verified the recorded example against the real API: video playback, provider/date metadata, exact original export, accepted export, independent copies, immutable source findings, protected sample deletion and mobile layout. The production frontend built successfully, and npm audit reported zero advisories. The suite also exercises the real ADK Runner and Gen AI SDK with intercepted HTTP, validating the Cloud request and response schema without network access. These are engineering checks, not model-accuracy measurements. The earlier database disconnect fix also passed an isolated PostgreSQL 16 probe.
 
 Hosted verification separately confirmed a **fresh Gemini 3.6 Flash analysis** of the synthetic film, returning one finding. Six editorial API checks and seven browser checks then passed, covering decisions, custom wording, persistence after reload, mobile controls, and export. An earlier hosted pass verified upload validation, video range requests, exact-byte unchanged export, concurrency protection, sample creation, deletion, and 12 browser checks. Test-created reviews were removed after verification; existing visitor reviews were not modified.
 
 Earlier hosted calls encountered quota exhaustion and temporary provider unavailability. One HTTP test connection also disconnected after the successful inference; subsequent requests over a fresh connection and the browser passed. A successful test does not guarantee ongoing provider or network availability.
 
-The local 2:37 production cut was separately checked for decoding, playback, captions, and scene timing. The current YouTube upload is a shorter 2:19 cut. Its successful recorded Gemini response demonstrates one synthetic example, not a benchmark across films.
+An updated 2:40 demo has been prepared with footage of the recorded successful Agent Platform result and Replit's contribution, with captions, playback and decoding checks. It is awaiting upload; the current YouTube link still opens the earlier 2:19 cut. These successful recorded results demonstrate one synthetic example, not a benchmark across films.
 
 ### Troubleshooting
 
@@ -264,6 +276,8 @@ All review routes use `/api/reviews` as their prefix. The running API's `/docs` 
 
 | Method | Route | Purpose |
 | --- | --- | --- |
+| GET | `/api/examples/mara` | Read the original recorded analysis, provider/date and asset hashes. |
+| POST | `/api/reviews/example` | Open an independent editable recorded example without a model call. |
 | POST | `/api/reviews` | Upload `title`, `video_file`, `srt_file`, and optional `intent_notes` as multipart form data. |
 | POST | `/api/reviews/sample` | Create a session from bundled sample assets. |
 | GET | `/api/reviews` | List review sessions. |
@@ -285,7 +299,7 @@ All review routes use `/api/reviews` as their prefix. The running API's `/docs` 
 
 **Public hosting.** This is intentionally a shared public demo with no per-user authentication or ownership boundary. Other visitors can access and change reviews. Use non-confidential test material. Separate accounts, durable media storage, and model-usage controls remain future work. `REVEAL_UPLOAD_DIR` can point to persistent storage when one is provisioned; setting it does not itself provision storage. Gemini uploads are now deleted on completion or failure on a best-effort basis.
 
-**Deployment.** The published app uses `backend.production:app` to serve the compiled frontend and API together. Development still uses the separate Vite proxy. Code changes require a new Replit publish. The database can survive while local media disappears across deployments; durable media storage is not configured by this repository.
+**Deployment.** The published app uses `backend.production:app` to serve the compiled frontend and API together. Development still uses the separate Vite proxy. Code changes require a new Replit publish. New bundled sample reviews resolve their video from the deployed package. For user uploads and older sample copies, the database can survive while local media disappears across deployments; durable user-media storage is not configured by this repository.
 
 **Validation roadmap.** Evaluate with professional describers and blind/low-vision participants; build an annotated set of reveal and non-reveal scenes; measure precision, missed issues, reviewer time, false-positive burden, and comprehension. Use those results to assess usefulness before claiming productivity or cost savings.
 

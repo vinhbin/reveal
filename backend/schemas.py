@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Optional, List, Any
+from datetime import datetime, timezone
+from typing import Optional, List, Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from backend.models import ReviewStatus, DecisionStatus, EvidenceOrigin, UncertaintyLevel
 
@@ -56,10 +56,20 @@ class ReviewSchema(BaseModel):
     status: ReviewStatus
     error_message: Optional[str] = ""
     model_used: Optional[str] = ""
+    analysis_source: Optional[Literal["live", "recorded", "offline"]] = None
+    recorded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     cues: List[CueSchema] = []
     findings: List[FindingSchema] = []
+
+    @field_validator("recorded_at", mode="after")
+    @classmethod
+    def recorded_time_is_utc(cls, value: Optional[datetime]) -> Optional[datetime]:
+        # SQLite reloads DateTime without tzinfo; these stored timestamps are UTC.
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 class ReviewSummarySchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -69,8 +79,18 @@ class ReviewSummarySchema(BaseModel):
     video_filename: str
     srt_filename: str
     status: ReviewStatus
+    model_used: Optional[str] = ""
+    analysis_source: Optional[Literal["live", "recorded", "offline"]] = None
+    recorded_at: Optional[datetime] = None
     cue_count: int
     finding_count: int
     unreviewed_count: int
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("recorded_at", mode="after")
+    @classmethod
+    def recorded_time_is_utc(cls, value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value

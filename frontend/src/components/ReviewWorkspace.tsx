@@ -53,9 +53,20 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
   const videoUrl = getVideoUrl(review.id);
   const acceptedCount = review.findings.filter((f) => f.status === 'accepted').length;
   const unreviewedCount = review.findings.filter((f) => f.status === 'unreviewed').length;
+  const hasAcceptedEdits = review.findings.some((finding) =>
+    finding.status === 'accepted' &&
+    (finding.edited_proposal || finding.proposed_text) !== review.cues.find((cue) => cue.id === finding.cue_id)?.text
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {review.analysis_source === 'recorded' && (
+        <p role="note" className="public-demo-notice">
+          <strong>Recorded Gemini example{review.recorded_at ? ` · ${new Date(review.recorded_at).toLocaleDateString()}` : ''}.</strong>{' '}
+          This review starts with a saved Gemini result. Editing and exporting do not make a new model call.
+          Re-run Analysis requests a new analysis.
+        </p>
+      )}
       {/* Review Status Banner for Analyzing or Failed States */}
       {(review.status === 'analyzing' || isAnalyzing) && (
         <div
@@ -126,7 +137,7 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         }}
       >
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{review.title}</h2>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>{review.title}</h1>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
             <span>Last completed analysis: <strong>{review.model_used || 'None yet'}</strong></span>
             <span>Total Cues: <strong>{review.cues.length}</strong></span>
@@ -137,14 +148,14 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
         </div>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing}>
+          {review.status !== 'failed' && <button className="btn btn-secondary" onClick={() => onReanalyze(review.id)} disabled={isAnalyzing || review.status === 'analyzing'}>
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
             {isAnalyzing ? 'Analyzing...' : 'Re-run Analysis'}
-          </button>
+          </button>}
 
           <button className="btn btn-primary" onClick={handleExport}>
             <Download className="w-4 h-4" />
-            Export Revised SRT
+            {hasAcceptedEdits ? 'Export revised SRT' : 'Export original SRT'}
           </button>
 
           <button
@@ -182,6 +193,8 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
             findings={review.findings}
             onUpdateDecision={onUpdateDecision}
             onExport={handleExport}
+            analysisCompleted={Boolean(review.model_used)}
+            hasAcceptedEdits={hasAcceptedEdits}
             onSeek={(time) => {
               setSeekRequest({ time, nonce: Date.now() });
               setCurrentTime(time);
@@ -213,8 +226,12 @@ export const ReviewWorkspace: React.FC<ReviewWorkspaceProps> = ({
               />
             ) : (
               <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" style={{ margin: '0 auto 8px' }} />
-                <p>Select a cue or finding to inspect evidence details and proposed wording.</p>
+                {review.model_used
+                  ? <CheckCircle2 className="w-8 h-8 text-emerald-400" style={{ margin: '0 auto 8px' }} />
+                  : <AlertTriangle className="w-8 h-8" style={{ margin: '0 auto 8px' }} />}
+                <p>{review.model_used
+                  ? 'The last completed analysis returned no findings. You can still review the script and video.'
+                  : 'No completed analysis yet. Run analysis to review possible identity disclosures.'}</p>
               </div>
             )}
           </div>

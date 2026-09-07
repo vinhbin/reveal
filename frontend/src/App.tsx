@@ -9,6 +9,7 @@ import {
   fetchReviewDetail,
   createReview,
   createSampleReview,
+  createRecordedExample,
   triggerAnalysis,
   updateFinding,
   deleteReview,
@@ -20,6 +21,7 @@ export const App: React.FC = () => {
   const hasNavigated = useRef(false);
 
   useEffect(() => {
+    if (!isEditor) document.title = 'Reveal — Same suspense. Shared discovery.';
     const handleNavigation = () => {
       const nextIsEditor = window.location.hash === '#/review';
       if (nextIsEditor !== isEditor) {
@@ -47,6 +49,8 @@ const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [currentView, setCurrentView] = useState<'upload' | 'workspace'>('upload');
   const [currentReview, setCurrentReview] = useState<Review | null>(null);
   const [recentReviews, setRecentReviews] = useState<ReviewSummary[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(true);
+  const recentRequest = useRef(0);
   const [isAccessibleView, setIsAccessibleView] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,16 +70,24 @@ const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   };
 
   useEffect(() => {
-    if (isActive) mainRef.current?.focus();
-    else mainRef.current?.querySelector('video')?.pause();
+    if (isActive) {
+      document.title = currentView === 'workspace' && currentReview
+        ? `${currentReview.title} — Reveal` : 'New review — Reveal';
+      mainRef.current?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } else mainRef.current?.querySelector('video')?.pause();
   }, [isActive, currentView, currentReview?.id]);
 
   const loadRecentReviews = async () => {
+    const request = ++recentRequest.current;
+    setIsLoadingReviews(true);
     try {
       const summaries = await fetchReviews();
-      setRecentReviews(summaries);
+      if (request === recentRequest.current) setRecentReviews(summaries);
     } catch (e) {
-      setError('Could not load recent reviews. Check your connection and refresh the page.');
+      if (request === recentRequest.current) setError('Could not load recent reviews. Check your connection and refresh the page.');
+    } finally {
+      if (request === recentRequest.current) setIsLoadingReviews(false);
     }
   };
 
@@ -113,6 +125,20 @@ const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
       loadRecentReviews();
     } catch (e: any) {
       setError(`Failed to load sample: ${e.message}`);
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleLoadExample = async () => {
+    if (!beginOperation()) return;
+    try {
+      const review = await createRecordedExample();
+      setCurrentReview(review);
+      setCurrentView('workspace');
+      loadRecentReviews();
+    } catch (e: any) {
+      setError(`Could not open the example: ${e.message}`);
     } finally {
       endOperation();
     }
@@ -186,6 +212,11 @@ const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
 
   return (
     <div className="app-container">
+      <a className="skip-link" href="#reveal-editor-main" onClick={(event) => {
+        event.preventDefault();
+        mainRef.current?.focus({ preventScroll: true });
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }}>Skip to review content</a>
       <Header
         currentView={currentView}
         title={currentReview?.title}
@@ -195,21 +226,23 @@ const EditorApp: React.FC<{ isActive: boolean }> = ({ isActive }) => {
           setCurrentView('upload');
           setCurrentReview(null);
         }}
-        onLoadSample={handleLoadSample}
+        onLoadSample={handleLoadExample}
         isBusy={isLoading}
         onHome={() => { window.location.hash = ''; }}
       />
 
-      <main className="main-content" ref={mainRef} tabIndex={-1}>
+      <main id="reveal-editor-main" className="main-content" ref={mainRef} tabIndex={-1}>
         {error && <div role="alert" className="public-demo-notice">{error}</div>}
         {isLoading && <p role="status">Working on your review. Please wait before starting another request.</p>}
         {currentView === 'upload' ? (
           <UploadView
             onUpload={handleUpload}
             onLoadSample={handleLoadSample}
+            onLoadExample={handleLoadExample}
             onSelectReview={handleSelectReview}
             recentReviews={recentReviews}
             isSubmitting={isLoading}
+            isLoadingReviews={isLoadingReviews}
           />
         ) : currentReview ? (
           <ReviewWorkspace

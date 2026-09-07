@@ -2,7 +2,8 @@ import asyncio
 import os
 import re
 import difflib
-import shutil
+from datetime import datetime
+from pathlib import Path
 import uuid
 from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, status
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from backend.bundled_example import MARA_REFERENCE, load_recorded_example, resolve_video_path
 from backend.database import get_db
 from backend.config import UPLOAD_DIR, SAMPLES_DIR
 from backend.models import Review, Cue, Finding, ReviewStatus, DecisionStatus, EvidenceOrigin, UncertaintyLevel
@@ -25,6 +27,7 @@ from backend.srt_parser import parse_srt, export_srt_bytes
 from backend.analyzer import analyze_review, get_media_duration
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
+examples_router = APIRouter(prefix="/api/examples", tags=["examples"])
 
 MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB
 MIN_VIDEO_SIZE = 1024               # 1KB
@@ -187,7 +190,13 @@ async def create_review(
 
 @router.post("/sample", response_model=ReviewSchema, status_code=status.HTTP_201_CREATED)
 async def create_sample_review(db: AsyncSession = Depends(get_db)):
-    """Create a sample review session using pre-packaged demonstration assets."""
+    """Create and analyze a sample session using the bundled demonstration assets."""
+    review = await build_sample_review(db)
+    return await trigger_analysis(review.id, db)
+
+
+async def build_sample_review(db: AsyncSession, snapshot: dict | None = None):
+    """Build independent editorial state around durable, versioned sample media."""
     review_id = str(uuid.uuid4())
     sample_video_path = SAMPLES_DIR / "sample_short.mp4"
     sample_srt_path = SAMPLES_DIR / "sample_ad.srt"
@@ -199,11 +208,10 @@ async def create_sample_review(db: AsyncSession = Depends(get_db)):
         srt_bytes = f.read()
     srt_content = srt_bytes.decode("utf-8")
 
-    saved_video_path = str(UPLOAD_DIR / f"{review_id}.mp4")
-    shutil.copyfile(str(sample_video_path), saved_video_path)
+    saved_video_path = MARA_REFERENCE
 
     parsed_cues = parse_srt(srt_content)
-    media_duration = get_media_duration(saved_video_path) or 72.0
+    media_duration = get_media_duration(str(sample_video_path)) or 72.0
     intent_notes = (
         "Synthetic test scene: Mara's identity is intended to remain concealed until "
         "her staff badge is shown at 00:01:06 (66 seconds). The cue at 00:00:05 "
@@ -239,8 +247,45 @@ async def create_sample_review(db: AsyncSession = Depends(get_db)):
             end_byte=c.end_char
         ))
 
+    if snapshot is not None:
+        review.title = "Recorded Example: Synthetic Mara Reveal"
+        review.status = ReviewStatus.COMPLETED
+        review.analysis_source = "recorded"
+        review.recorded_at = datetime.fromisoformat(snapshot["recorded_at"].replace("Z", "+00:00"))
+        review.model_used = snapshot["model_used"]
+        review.intent_notes = snapshot["intent_notes"]
+        await db.flush()
+        cue_result = await db.execute(select(Cue).where(Cue.review_id == review_id))
+        cue_map = {cue.index: cue for cue in cue_result.scalars()}
+        for finding in snapshot["findings"]:
+            db.add(Finding(
+                id=str(uuid.uuid4()), review_id=review_id,
+                cue_id=cue_map[finding["cue_index"]].id,
+                edited_proposal=finding["proposed_text"],
+                status=DecisionStatus.UNREVIEWED, needs_re_review=False,
+                **finding,
+            ))
     await db.commit()
-    return await trigger_analysis(review_id, db)
+    return await get_review(review_id, db)
+
+
+def verified_example():
+    try:
+        return load_recorded_example(SAMPLES_DIR)
+    except (OSError, ValueError, KeyError):
+        raise HTTPException(status_code=503, detail="The recorded example assets are unavailable or do not match the verified recording.")
+
+
+@examples_router.get("/mara")
+async def get_recorded_example():
+    """Read the original public snapshot, unaffected by editable review copies."""
+    return verified_example()
+
+
+@router.post("/example", response_model=ReviewSchema, status_code=status.HTTP_201_CREATED)
+async def create_recorded_example(db: AsyncSession = Depends(get_db)):
+    """Copy verified recorded findings without invoking an analysis provider."""
+    return await build_sample_review(db, snapshot=verified_example())
 
 
 @router.get("", response_model=List[ReviewSummarySchema])
@@ -260,6 +305,9 @@ async def list_reviews(db: AsyncSession = Depends(get_db)):
             video_filename=r.video_filename,
             srt_filename=r.srt_filename,
             status=r.status,
+            model_used=r.model_used,
+            analysis_source=r.analysis_source,
+            recorded_at=r.recorded_at,
             cue_count=len(r.cues),
             finding_count=len(r.findings),
             unreviewed_count=unreviewed,
@@ -324,9 +372,12 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
             }
             for c in review.cues
         ]
+        video_path = resolve_video_path(review.video_path, SAMPLES_DIR)
+        if not video_path.is_file():
+            raise FileNotFoundError("This review's video is unavailable. Upload the original clip again.")
         candidate_findings, model_name = await asyncio.wait_for(
             analyze_review(
-                video_path=review.video_path,
+                video_path=str(video_path),
                 cues=cues_dict,
                 intent_notes=review.intent_notes,
                 media_duration=review.media_duration
@@ -419,6 +470,8 @@ async def trigger_analysis(review_id: str, db: AsyncSession = Depends(get_db)):
 
         review.status = ReviewStatus.COMPLETED
         review.model_used = model_name
+        review.analysis_source = "offline" if "offline" in model_name.lower() else "live"
+        review.recorded_at = None
         review.error_message = ""
         await db.commit()
     except asyncio.CancelledError:
@@ -663,9 +716,11 @@ async def delete_review(review_id: str, db: AsyncSession = Depends(get_db)):
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
 
-    if os.path.exists(review.video_path):
+    video_path = Path(review.video_path)
+    bundled = review.video_path.startswith("sample:") or video_path.resolve().is_relative_to(SAMPLES_DIR.resolve())
+    if not bundled and video_path.is_file():
         try:
-            os.remove(review.video_path)
+            video_path.unlink()
         except Exception:
             pass
 
@@ -679,7 +734,13 @@ async def get_review_video(review_id: str, db: AsyncSession = Depends(get_db)):
     """Stream uploaded video file with byte-range support."""
     result = await db.execute(select(Review).filter(Review.id == review_id))
     review = result.scalars().first()
-    if not review or not os.path.exists(review.video_path):
-        raise HTTPException(status_code=404, detail="Video file not found")
-    
-    return FileResponse(review.video_path, media_type="video/mp4")
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    try:
+        video_path = resolve_video_path(review.video_path, SAMPLES_DIR)
+        if not video_path.is_file():
+            raise FileNotFoundError
+    except (FileNotFoundError, OSError):
+        raise HTTPException(status_code=404, detail="This review's video is unavailable. Uploaded clips may be lost after a deployment; upload the original clip again.")
+    media_type = "video/webm" if video_path.suffix.lower() == ".webm" else "video/mp4"
+    return FileResponse(video_path, media_type=media_type)

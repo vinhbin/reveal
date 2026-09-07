@@ -1,0 +1,22 @@
+{
+  "example_id": "mara-v1",
+  "analysis_source": "recorded",
+  "recorded_at": "2026-09-07T05:34:34.344805Z",
+  "model_used": "google-adk/agent-platform/gemini-3.6-flash",
+  "provenance": "Recorded successful Google ADK analysis using Gemini on Google Agent Platform; replaying this example does not make a model call.",
+  "video_sha256": "a20c845168e178919f001d5eee82a20b561c5a922220dd0ffb3a330bfcce7616",
+  "srt_sha256": "f5a570c623754d9dbdf809b2434fb91ef603c530e3865b4d23c52995b566de5a",
+  "intent_notes": "Synthetic test scene: Mara's identity is intended to remain concealed until her staff badge is shown at 00:01:06 (66 seconds). The cue at 00:00:05 names her before that reveal. Naming her at or after 66 seconds is intentional.",
+  "findings": [
+    {
+      "cue_index": 1,
+      "candidate_name": "Mara",
+      "issue_description": "The cue identifies the visitor as Mara at 00:05, before her identity is visually revealed on her staff badge at 01:06.",
+      "proposed_text": "A hooded figure waits in the theater lobby.",
+      "evidence_origin": "filmmaker_intent",
+      "interval_start": 66.0,
+      "interval_end": 71.0,
+      "uncertainty": "low"
+    }
+  ]
+}

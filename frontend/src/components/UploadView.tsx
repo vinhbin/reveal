@@ -5,23 +5,30 @@ import { ReviewSummary } from '../types';
 interface UploadViewProps {
   onUpload: (title: string, videoFile: File, srtFile: File, intentNotes: string) => void;
   onLoadSample: () => void;
+  onLoadExample: () => void;
   onSelectReview: (reviewId: string) => void;
   recentReviews: ReviewSummary[];
   isSubmitting: boolean;
+  isLoadingReviews: boolean;
 }
 
 export const UploadView: React.FC<UploadViewProps> = ({
   onUpload,
   onLoadSample,
+  onLoadExample,
   onSelectReview,
   recentReviews,
   isSubmitting,
+  isLoadingReviews,
 }) => {
   const [title, setTitle] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [srtFile, setSrtFile] = useState<File | null>(null);
   const [intentNotes, setIntentNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [includeFailed, setIncludeFailed] = useState(false);
+  const failedCount = recentReviews.filter((review) => review.status === 'failed').length;
+  const visibleReviews = recentReviews.filter((review) => includeFailed || review.status !== 'failed');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +63,25 @@ export const UploadView: React.FC<UploadViewProps> = ({
         <strong>Shared public demo.</strong> Reviews and uploads are visible to other visitors.
         Use sample or non-confidential material. Live analysis sends your clip and script to Google.
       </p>
+
+      <section className="card" aria-labelledby="example-heading">
+        <h2 id="example-heading" style={{ fontSize: '1.2rem', marginBottom: '8px' }}>Explore a recorded Gemini review</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>
+          Open the synthetic Mara scene with a saved, successful Agent Platform result.
+          Your copy is editable. Opening it does not call Gemini.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+          <button type="button" className="btn btn-primary" onClick={onLoadExample} disabled={isSubmitting}>
+            <FileText size={18} aria-hidden="true" /> Open saved Gemini example
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={onLoadSample} disabled={isSubmitting}>
+            <Sparkles size={18} aria-hidden="true" /> Analyze sample
+          </button>
+        </div>
+        <p style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          Analyze sample requests a new analysis and depends on the configured provider's availability.
+        </p>
+      </section>
 
       {error && (
         <div
@@ -221,16 +247,6 @@ export const UploadView: React.FC<UploadViewProps> = ({
               {isSubmitting ? 'Uploading & Creating Review...' : 'Start Review Session'}
             </button>
 
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onLoadSample}
-              disabled={isSubmitting}
-              style={{ padding: '14px 20px' }}
-            >
-              <Sparkles className="w-5 h-5 text-amber-400" />
-              Load Sample Demo
-            </button>
           </div>
         </form>
 
@@ -241,13 +257,23 @@ export const UploadView: React.FC<UploadViewProps> = ({
               Recent Reviews
             </h2>
 
-            {recentReviews.length === 0 ? (
+            {failedCount > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '0.9rem' }}>
+                <input type="checkbox" checked={includeFailed} onChange={(event) => setIncludeFailed(event.target.checked)} />
+                Include failed reviews ({failedCount})
+              </label>
+            )}
+
+            {isLoadingReviews && <p role="status" style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>Loading recent reviews…</p>}
+            {!isLoadingReviews && visibleReviews.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                No recent review sessions found. Upload a film and SRT or click "Load Sample Demo" to begin.
+                {failedCount > 0 && !includeFailed
+                  ? 'No completed or pending reviews. Include failed reviews above to inspect or retry them.'
+                  : 'No recent review sessions found. Open the saved example or upload a film and script to begin.'}
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {recentReviews.map((r) => (
+                {visibleReviews.map((r) => (
                   <button
                     key={r.id}
                     disabled={isSubmitting}
@@ -267,7 +293,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                     <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '4px', color: 'var(--text-primary)' }}>{r.title}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       <span>{r.cue_count} Cues</span>
-                      <span className={`badge badge-${r.status === 'completed' ? 'accepted' : 'unreviewed'}`}>
+                      <span className={`badge badge-${r.status === 'failed' ? 'failed' : r.status === 'completed' ? 'accepted' : 'unreviewed'}`}>
                         {r.status === 'completed'
                           ? `${r.finding_count} Findings`
                           : r.status === 'failed'
@@ -276,6 +302,11 @@ export const UploadView: React.FC<UploadViewProps> = ({
                               ? 'Analyzing'
                               : 'Awaiting analysis'}
                       </span>
+                    </div>
+                    <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>
+                      <time dateTime={r.created_at}>{new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(r.created_at) ? r.created_at : `${r.created_at}Z`).toLocaleString()}</time>
+                      {r.analysis_source === 'recorded' && <span> · Recorded example</span>}
+                      {r.model_used && <div>{r.model_used}</div>}
                     </div>
                   </button>
                 ))}

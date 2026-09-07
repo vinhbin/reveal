@@ -57,6 +57,12 @@ export async function createSampleReview(): Promise<Review> {
   return res.json();
 }
 
+export async function createRecordedExample(): Promise<Review> {
+  const res = await fetch(`${API_BASE}/example`, { method: 'POST' });
+  await requireSuccess(res, 'Failed to open the recorded example');
+  return res.json();
+}
+
 export async function triggerAnalysis(reviewId: string): Promise<Review> {
   const res = await fetch(`${API_BASE}/${reviewId}/analyze`, {
     method: 'POST',

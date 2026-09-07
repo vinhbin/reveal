@@ -19,8 +19,9 @@ function fixture(status = 'completed') {
   };
 }
 
-async function mockApi(page: Page, status = 'completed', delayList = false) {
+async function mockApi(page: Page, status = 'completed', delayList = false, errorMessage?: string) {
   const review = fixture(status);
+  if (errorMessage) review.error_message = errorMessage;
   let releaseList = () => {};
   const gate = delayList ? new Promise<void>((resolve) => { releaseList = resolve; }) : Promise.resolve();
   const calls: string[] = [];
@@ -127,6 +128,13 @@ test('missing video shows an actionable message and original export has an hones
   await openExample(page);
   await expect(page.getByText(/Video unavailable/i)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export original SRT', exact: true })).toBeVisible();
+});
+
+test('a missing source video is not misreported as Gemini unavailability', async ({ page }) => {
+  await mockApi(page, 'failed', false, "Analysis failed: This review's video is unavailable. Upload the original clip again.");
+  await openExample(page);
+  await expect(page.getByRole('alert').filter({ hasText: 'Analysis failed' })).toContainText('The video for this review is missing.');
+  await expect(page.getByText('Gemini is temporarily unavailable.', { exact: false })).toHaveCount(0);
 });
 
 test('editor skip link preserves the editor route and home preserves a draft', async ({ page }) => {
